@@ -84,3 +84,83 @@ def test_branch_needs_both_yes_and_no_edges() -> None:
 
     with pytest.raises(ValidationError, match="yes and a no"):
         load(branch)
+
+
+def test_marker_must_be_reached_on_every_path() -> None:
+    def optional_marker(d: dict[str, Any]) -> None:
+        d["nodes"] = [
+            {"id": "a", "type": "goto", "url": "http://x/login"},
+            {"id": "b", "type": "branch", "if_visible": "#banner"},
+            {"id": "m", "type": "wait_for", "selector": ".me", "role": "logged_in_marker"},
+            {"id": "s", "type": "save_session"},
+            {"id": "end", "type": "click", "selector": "#done"},
+        ]
+        d["edges"] = [["a", "b"], ["b", "m", "yes"], ["b", "end", "no"], ["m", "s"]]
+
+    with pytest.raises(ValidationError, match="every path"):
+        load(optional_marker)
+
+
+def test_flow_without_save_session_is_rejected() -> None:
+    def drop(d: dict[str, Any]) -> None:
+        d["nodes"].pop()
+
+    with pytest.raises(ValidationError, match="save_session"):
+        load(drop)
+
+
+def test_label_on_a_non_branch_edge_is_rejected() -> None:
+    def label(d: dict[str, Any]) -> None:
+        d["edges"][0] = ["n1", "n2", "yes"]
+
+    with pytest.raises(ValidationError, match="only branch"):
+        load(label)
+
+
+def test_cycle_apart_from_the_main_path_is_rejected() -> None:
+    def island(d: dict[str, Any]) -> None:
+        d["nodes"] += [{"id": "c", "type": "save_session"}, {"id": "d", "type": "save_session"}]
+        d["edges"] += [["c", "d"], ["d", "c"]]
+
+    with pytest.raises(ValidationError, match="cycle|start"):
+        load(island)
+
+
+def test_many_sequential_branches_load_quickly() -> None:
+    def diamonds(d: dict[str, Any]) -> None:
+        nodes: list[dict[str, Any]] = [{"id": "s0", "type": "goto", "url": "http://x/"}]
+        edges: list[list[str]] = []
+        previous = "s0"
+        for i in range(40):
+            nodes += [
+                {"id": f"b{i}", "type": "branch", "if_visible": "#x"},
+                {"id": f"y{i}", "type": "click", "selector": "#y"},
+                {"id": f"j{i}", "type": "click", "selector": "#j"},
+            ]
+            edges += [[previous, f"b{i}"], [f"b{i}", f"y{i}", "yes"], [f"b{i}", f"j{i}", "no"],
+                      [f"y{i}", f"j{i}"]]
+            previous = f"j{i}"
+        nodes += [
+            {"id": "m", "type": "wait_for", "selector": ".me", "role": "logged_in_marker"},
+            {"id": "s", "type": "save_session"},
+        ]
+        edges += [[previous, "m"], ["m", "s"]]
+        d["nodes"], d["edges"] = nodes, edges
+
+    assert len(load(diamonds).nodes) > 100
+
+
+def test_email_code_without_email_settings_is_rejected() -> None:
+    def no_email(d: dict[str, Any]) -> None:
+        del d["nodes"][5]["email"]
+
+    with pytest.raises(ValidationError, match="email"):
+        load(no_email)
+
+
+def test_template_outside_fill_is_rejected() -> None:
+    def in_url(d: dict[str, Any]) -> None:
+        d["nodes"][0]["url"] = "http://x/login?u={{credentials.username}}"
+
+    with pytest.raises(ValidationError, match="only supported in fill"):
+        load(in_url)

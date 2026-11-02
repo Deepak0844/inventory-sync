@@ -116,4 +116,14 @@ class PlaywrightSupplierSession:
     def load_cookies_json(self, cookies_json: str) -> None:
         """Add previously saved cookies to the context."""
         cookies: list[Any] = json.loads(cookies_json)
-        self._open_context().add_cookies(cookies)
+        try:
+            self._open_context().add_cookies(cookies)
+        except Error as exc:
+            raise PageError("could not restore saved cookies") from exc
+
+    def clear_cookies(self) -> None:
+        """Remove every cookie from the context. Raises PageError if the browser fails."""
+        try:
+            self._open_context().clear_cookies()
+        except Error as exc:
+            raise PageError("could not clear cookies") from exc

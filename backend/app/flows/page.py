@@ -67,3 +67,7 @@ class BrowserSession(Protocol):
     def load_cookies_json(self, cookies_json: str) -> None:
         """Restore saved cookies."""
         ...
+
+    def clear_cookies(self) -> None:
+        """Forget all cookies, so a failed saved session does not leak into a fresh login."""
+        ...

@@ -41,7 +41,7 @@ class FlowContext:
     clock: Clock
     poll: float
     code: str | None = None
-    last_click_at: float = 0.0
+    last_click_at: float | None = None
 
     def render(self, template: str) -> str:
         """Fill `{{credentials.username}}`, `{{credentials.password}}` and `{{code}}`.

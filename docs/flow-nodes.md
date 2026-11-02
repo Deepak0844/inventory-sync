@@ -1,8 +1,8 @@
 # Flow node types
 
-A Supplier's flow is JSON (see PLAN.md section 11). `nodes` run in the order the `edges` lead; an edge is `["from", "to"]`, or `["from", "to", "yes"]` / `["from", "to", "no"]` leaving a `branch`. The flow is checked when it is loaded: unique ids, edges that point at real nodes, one start node, no cycles, and at least one `wait_for` with role `logged_in_marker`.
+A Supplier's flow is JSON (see PLAN.md section 11). `nodes` run in the order the `edges` lead; an edge is `["from", "to"]`, or `["from", "to", "yes"]` / `["from", "to", "no"]` leaving a `branch`. The flow is checked when it is loaded: unique ids, edges that point at real nodes, one start node, no cycles, and a `wait_for` with role `logged_in_marker` on every path, at least one `save_session`, `email` settings on any `await_code` that lists `email_code`, and labels only on `branch` edges.
 
-Templates in `value` can use `{{credentials.username}}`, `{{credentials.password}}` and `{{code}}`. Any other name is rejected on load.
+Templates are only supported in `fill` (not in `goto`, `click` and so on). In a `fill` value you can use `{{credentials.username}}`, `{{credentials.password}}` and `{{code}}`. Any other name is rejected on load.
 
 After every node the runner checks the page for the `blocked_if` text (for example a CAPTCHA) and stops with Blocked.
 
@@ -13,7 +13,7 @@ Open a URL.
 ```
 
 ## fill
-Type into a field. `mask: true` keeps the value out of screenshots and logs.
+Type into a field. `mask: true` marks the field to be masked in Test run screenshots (Phase 6). The runner itself never logs values.
 ```json
 { "id": "n3", "type": "fill", "selector": "#password", "value": "{{credentials.password}}", "mask": true }
 ```
@@ -29,6 +29,8 @@ Wait until an element is visible (`timeout_s`, default 5). The `role` says what 
 - `code_prompt`: the code box never appeared, so the login is reported as bad credentials.
 - `logged_in_marker`: signed-in element. A timeout is a wrong code, or bad credentials if no code was entered. Session reuse also uses this selector.
 - no role: a plain flow failure.
+
+A missing `code_prompt` counts as bad credentials, so a Supplier that sometimes skips 2FA needs a `branch` on the code box (`if_visible` the code field): `yes` goes through `await_code`, `no` goes straight to the `logged_in_marker` wait.
 ```json
 { "id": "n8", "type": "wait_for", "selector": ".account-menu", "role": "logged_in_marker", "timeout_s": 5 }
 ```

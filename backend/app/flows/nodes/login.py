@@ -36,7 +36,11 @@ class AwaitCode(BaseNode):
             sources.append(ctx.pasted_codes)
         if "email_code" in self.methods and self.email and ctx.fetch_mail:
             sources.append(MailboxCodeSource(ctx.fetch_mail, self.email.sender, self.email.pattern))
-        code = await_login_code(sources, ctx.clock, ctx.last_click_at, self.timeout_s, ctx.poll)
+        if not sources:
+            # Waiting would only burn the whole timeout with no way for a code to arrive.
+            raise FlowFailure(LoginResult.FLOW_FAILURE, "no usable Login Code source")
+        requested_at = ctx.clock.now() if ctx.last_click_at is None else ctx.last_click_at
+        code = await_login_code(sources, ctx.clock, requested_at, self.timeout_s, ctx.poll)
         if code is None:
             raise FlowFailure(LoginResult.CODE_TIMEOUT)
         ctx.code = code

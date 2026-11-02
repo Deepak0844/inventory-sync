@@ -156,9 +156,11 @@ def test_branch_follows_the_yes_edge_when_the_element_is_visible() -> None:
             {"id": "dismiss", "type": "click", "selector": "#accept"},
             {"id": "skip", "type": "wait_for", "selector": ".me", "role": "logged_in_marker",
              "timeout_s": 0},
+            {"id": "save", "type": "save_session"},
         ]
         d["edges"] = [["n1", "n2"], ["n2", "n3"], ["n3", "n4"], ["n4", "b"],
-                      ["b", "dismiss", "yes"], ["b", "skip", "no"], ["dismiss", "skip"]]
+                      ["b", "dismiss", "yes"], ["b", "skip", "no"], ["dismiss", "skip"],
+                      ["skip", "save"]]
 
     page = ScriptedPage(visible={"#cookie-banner", ".me"})
     assert setup(page, add_branch).login() is LoginResult.LOGGED_IN
@@ -230,3 +232,58 @@ def test_browser_failure_while_reading_is_unknown() -> None:
     assert (reading.result, reading.error_kind) == (ReadingResult.UNKNOWN, "browser_error")
 
 
+
+
+def test_email_only_flow_with_no_mailbox_fails_fast() -> None:
+    def email_only(d: dict[str, Any]) -> None:
+        d["nodes"][5]["methods"] = ["email_code"]
+
+    s = setup(two_factor_page(), email_only)
+    clock = FakeClock()
+    result = run_login(s.flow, FakeBrowserSession(s.page), s.store, CREDS, s.pasted, None,
+                       clock, poll=1.0)
+    assert result is LoginResult.FLOW_FAILURE
+    assert clock.now() == 0
+
+
+def test_await_code_without_an_earlier_click_ignores_older_pasted_codes() -> None:
+    def no_click_first(d: dict[str, Any]) -> None:
+        d["nodes"][3] = {"id": "n4", "type": "wait_for", "selector": "#otp", "timeout_s": 0}
+
+    clock = FakeClock(start=100.0)
+    pasted = PastedCodeSource(FakeClock(start=50.0))
+    pasted.submit("111111")  # pasted at t=50, before this run started at t=100
+    page = two_factor_page()
+    page.visible.add("#otp")
+    s = setup(page, no_click_first)
+    result = run_login(s.flow, FakeBrowserSession(page), s.store, CREDS, pasted, None,
+                       clock, poll=1.0)
+    assert result is LoginResult.CODE_TIMEOUT
+
+
+def test_corrupt_saved_cookies_are_discarded_and_login_continues() -> None:
+    class RejectingSession(FakeBrowserSession):
+        cleared_flag = False
+
+        def load_cookies_json(self, cookies_json: str) -> None:
+            raise ValueError("not json")
+
+        def clear_cookies(self) -> None:
+            self.cleared_flag = True
+
+    s = setup(two_factor_page())
+    s.store.save("garbage")
+    s.pasted.submit("123456")
+    session = RejectingSession(s.page)
+    result = run_login(s.flow, session, s.store, CREDS, s.pasted, None, FakeClock(), poll=1.0)
+    assert result is LoginResult.LOGGED_IN
+    assert session.cleared_flag
+
+
+def test_cookies_of_an_expired_session_are_cleared_before_the_fresh_login() -> None:
+    s = setup(two_factor_page())
+    s.store.save("[]")
+    s.pasted.submit("123456")
+    session = FakeBrowserSession(s.page)
+    run_login(s.flow, session, s.store, CREDS, s.pasted, None, FakeClock(), poll=1.0)
+    assert session.cleared == 1

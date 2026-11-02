@@ -128,9 +128,13 @@ class FakeBrowserSession:
     def __init__(self, page: ScriptedPage) -> None:
         self.page = page
         self.loaded: str | None = None
+        self.cleared = 0
 
     def cookies_json(self) -> str:
         return '[{"name": "session"}]'
 
     def load_cookies_json(self, cookies_json: str) -> None:
         self.loaded = cookies_json
+
+    def clear_cookies(self) -> None:
+        self.cleared += 1
