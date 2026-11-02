@@ -50,3 +50,20 @@ class Page(Protocol):
     def content(self) -> str:
         """The page HTML."""
         ...
+
+
+class BrowserSession(Protocol):
+    """A page plus the ability to save and restore its cookies."""
+
+    @property
+    def page(self) -> Page:
+        """The tab to drive."""
+        ...
+
+    def cookies_json(self) -> str:
+        """Cookies as JSON."""
+        ...
+
+    def load_cookies_json(self, cookies_json: str) -> None:
+        """Restore saved cookies."""
+        ...

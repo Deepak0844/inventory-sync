@@ -1,5 +1,6 @@
 """Fixtures that run the mock Supplier on a real port and a real Chromium."""
 
+import json
 import socket
 import threading
 import time
@@ -10,7 +11,7 @@ import pytest
 import uvicorn
 from playwright.sync_api import Browser, sync_playwright
 
-from app.flows.supplier_flow import SupplierFlow
+from app.flows.definition import FlowDefinition
 from mock_supplier.app import MockState, create_mock_app
 
 
@@ -53,22 +54,41 @@ def browser() -> Iterator[Browser]:
         chromium.close()
 
 
+def mock_flow_json(base_url: str) -> str:
+    """The Phase 1 mock Supplier flow, written as the JSON a Supplier would be given."""
+    return json.dumps({
+        "supplier": "mock-supplier",
+        "version": 1,
+        "login_path": "/login",
+        "logged_in_url": f"{base_url}/account",
+        "blocked_if": {"contains": "CAPTCHA"},
+        "nodes": [
+            {"id": "n1", "type": "goto", "url": f"{base_url}/login"},
+            {"id": "n2", "type": "fill", "selector": "input[name=username]",
+             "value": "{{credentials.username}}"},
+            {"id": "n3", "type": "fill", "selector": "input[name=password]",
+             "value": "{{credentials.password}}", "mask": True},
+            {"id": "n4", "type": "click", "selector": "button[type=submit]"},
+            {"id": "n5", "type": "wait_for", "selector": "input[name=code]",
+             "role": "code_prompt", "timeout_s": 0},
+            {"id": "n6", "type": "await_code", "methods": ["ui_code", "email_code"],
+             "email": {"sender": "no-reply@mock-supplier.test", "pattern": "code is (\\d{6})"},
+             "timeout_s": 10},
+            {"id": "n7", "type": "fill", "selector": "input[name=code]", "value": "{{code}}"},
+            {"id": "n8", "type": "click", "selector": "button[type=submit]"},
+            {"id": "n9", "type": "wait_for", "selector": '[data-testid="account-menu"]',
+             "role": "logged_in_marker", "timeout_s": 0},
+            {"id": "n10", "type": "save_session"},
+        ],
+        "edges": [[f"n{i}", f"n{i + 1}"] for i in range(1, 10)],
+        "extract": {
+            "stock_selector": "#stock",
+            "in_stock_if": {"contains": "in stock"},
+            "out_of_stock_if": {"contains": "out of stock"},
+        },
+    })
+
+
 @pytest.fixture
-def flow(mock_supplier: RunningMock) -> SupplierFlow:
-    return SupplierFlow(
-        base_url=mock_supplier.base_url,
-        login_path="/login",
-        account_path="/account",
-        username_selector="input[name=username]",
-        password_selector="input[name=password]",
-        submit_selector="button[type=submit]",
-        code_prompt_text="Enter the code",
-        code_selector="input[name=code]",
-        logged_in_marker='[data-testid="account-menu"]',
-        blocked_text="CAPTCHA",
-        stock_selector="#stock",
-        in_stock_texts=("in stock",),
-        out_of_stock_texts=("out of stock",),
-        mail_sender="no-reply@mock-supplier.test",
-        mail_code_pattern=r"code is (\d{6})",
-    )
+def flow(mock_supplier: RunningMock) -> FlowDefinition:
+    return FlowDefinition.model_validate_json(mock_flow_json(mock_supplier.base_url))
