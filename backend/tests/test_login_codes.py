@@ -1,5 +1,5 @@
-from app.flows.login_codes import MailboxCodeSource, PastedCodeSource, await_login_code
-from app.mail.codes import MailMessage, extract_login_code
+from app.flows.login_codes import CodeSource, MailboxCodeSource, PastedCodeSource, await_login_code
+from app.mail.codes import MailboxError, MailMessage, extract_login_code
 from tests.fakes import FakeClock
 
 SENDER = "no-reply@supplier.test"
@@ -70,3 +70,26 @@ def test_returns_none_when_nothing_arrives_before_the_timeout() -> None:
     result = await_login_code(sources, clock, requested_at=0.0, timeout=600, interval=5)
     assert result is None
     assert clock.now() >= 600
+
+
+def test_code_pasted_before_the_run_requested_one_is_ignored() -> None:
+    source = PastedCodeSource(FakeClock(start=100.0))
+    source.submit("111111")
+    assert source.poll(150.0) is None
+
+
+def test_failing_mailbox_does_not_stop_the_pasted_path() -> None:
+    def down() -> list[MailMessage]:
+        raise MailboxError("imap is down")
+
+    pasted = PastedCodeSource()
+    pasted.submit("654321")
+    sources: list[CodeSource] = [MailboxCodeSource(down, SENDER, PATTERN), pasted]
+    result = await_login_code(sources, FakeClock(), requested_at=0.0, timeout=600, interval=5)
+    assert result == "654321"
+
+
+def test_sender_with_display_name_and_different_case_still_matches() -> None:
+    sender = "Mock Supplier <No-Reply@Supplier.TEST>"
+    messages = [mail("Your code is 111111", 105.0, sender=sender)]
+    assert extract_login_code(messages, SENDER, PATTERN, 100.0) == "111111"

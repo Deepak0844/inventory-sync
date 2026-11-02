@@ -26,3 +26,13 @@ class SupplierFlow:
     out_of_stock_texts: tuple[str, ...]
     mail_sender: str
     mail_code_pattern: str
+
+    def __post_init__(self) -> None:
+        """Reject empty values, which would match every page or no page.
+
+        Raises:
+            ValueError: naming the first empty required field.
+        """
+        for name, value in vars(self).items():
+            if value == "" or value == ():
+                raise ValueError(f"SupplierFlow.{name} must not be empty")

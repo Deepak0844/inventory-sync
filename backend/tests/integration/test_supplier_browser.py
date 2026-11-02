@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 
+import pytest
 from playwright.sync_api import Browser
 
 from app.core.clock import SystemClock
@@ -7,7 +8,8 @@ from app.core.encryption import SecretBox, generate_key
 from app.flows.extract import Reading, ReadingResult, extract_stock
 from app.flows.login import Credentials, LoginResult, ensure_logged_in
 from app.flows.login_codes import CodeSource, MailboxCodeSource, PastedCodeSource
-from app.flows.playwright_session import PlaywrightSupplierSession
+from app.flows.page import PageError
+from app.flows.playwright_session import PlaywrightSupplierSession, SessionNotOpenError
 from app.flows.session_store import EncryptedSessionStore, MemoryTextRepository
 from app.flows.supplier_flow import SupplierFlow
 from app.mail.codes import MailMessage
@@ -161,3 +163,28 @@ def test_lost_session_is_unknown(browser: Browser, flow: SupplierFlow,
     assert reading.error_kind == "session_lost"
 
 
+
+
+class CaptchaAfterPrompt(PasteFromOutbox):
+    """The Supplier shows its blocked page once the code is submitted."""
+
+    def poll(self, requested_at: float) -> str | None:
+        self.mock.control("captcha", on=True)
+        return super().poll(requested_at)
+
+
+def test_block_page_after_the_code_is_blocked_not_a_wrong_code(
+    browser: Browser, flow: SupplierFlow, mock_supplier: RunningMock
+) -> None:
+    result = run_login(browser, flow, [CaptchaAfterPrompt(mock_supplier)], store())
+    assert result is LoginResult.BLOCKED
+
+
+def test_browser_timeout_surfaces_as_page_error(browser: Browser) -> None:
+    with PlaywrightSupplierSession(browser) as session, pytest.raises(PageError):
+        session.page.goto("http://127.0.0.1:1/")
+
+
+def test_session_used_before_it_is_opened_raises_a_specific_error(browser: Browser) -> None:
+    with pytest.raises(SessionNotOpenError):
+        PlaywrightSupplierSession(browser).cookies_json()

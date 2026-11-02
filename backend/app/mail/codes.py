@@ -6,6 +6,11 @@ Not responsible for connecting to the mailbox; callers pass messages in.
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
+from email.utils import parseaddr
+
+
+class MailboxError(Exception):
+    """The mailbox could not be read."""
 
 
 @dataclass(frozen=True)
@@ -27,8 +32,9 @@ def extract_login_code(
     Supplier's regex; its first group is the code.
     """
     regex = re.compile(pattern)
+    wanted = parseaddr(sender)[1].lower()
     for message in sorted(messages, key=lambda m: m.received_at, reverse=True):
-        if message.sender != sender or message.received_at <= requested_at:
+        if parseaddr(message.sender)[1].lower() != wanted or message.received_at <= requested_at:
             continue
         match = regex.search(message.body)
         if match:

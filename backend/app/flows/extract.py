@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from enum import Enum
 from urllib.parse import urlparse
 
-from app.flows.page import Page
+from app.flows.page import Page, PageError
 from app.flows.supplier_flow import SupplierFlow
 
 
@@ -38,6 +38,13 @@ def extract_stock(page: Page, flow: SupplierFlow, listing_url: str) -> Reading:
 
     Never raises for a page problem; a failed check is an Unknown reading.
     """
+    try:
+        return _read(page, flow, listing_url)
+    except PageError:
+        return _unknown("browser_error")
+
+
+def _read(page: Page, flow: SupplierFlow, listing_url: str) -> Reading:
     response = page.goto(listing_url)
     if response is not None and response.status == 404:
         return Reading(ReadingResult.LISTING_REMOVED)

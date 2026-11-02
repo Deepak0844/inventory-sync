@@ -16,12 +16,16 @@ class FakeShopify:
     def __init__(self, tracked: bool = False) -> None:
         self.tracked = tracked
         self.calls: list[dict[str, Any]] = []
-        self.failures: list[httpx.Response] = []
+        self.failures: list[httpx.Response | Exception] = []
+        self.locations: list[dict[str, str]] = [{"id": "gid://shopify/Location/9"}]
         self.user_errors: list[str] = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         if self.failures:
-            return self.failures.pop(0)
+            failure = self.failures.pop(0)
+            if isinstance(failure, Exception):
+                raise failure
+            return failure
         body = json.loads(request.content)
         query: str = body["query"]
         self.calls.append({"query": query, "variables": body["variables"],
@@ -33,7 +37,7 @@ class FakeShopify:
             self.tracked = True
             data = {"inventoryItemUpdate": {"userErrors": []}}
         elif "locations" in query:
-            data = {"locations": {"nodes": [{"id": "gid://shopify/Location/9"}]}}
+            data = {"locations": {"nodes": self.locations}}
         else:
             data = {"productVariant": {"inventoryItem": {"id": "gid://shopify/InventoryItem/5",
                                                           "tracked": self.tracked}}}
@@ -110,3 +114,34 @@ def test_unknown_variant_raises() -> None:
     client = ShopifyClient("s.myshopify.com", "tok", httpx.MockTransport(no_variant), FakeClock())
     with pytest.raises(ShopifyError, match="not found"):
         client.set_available(VARIANT, 0)
+
+
+def test_throttling_reported_inside_a_200_response_is_retried() -> None:
+    shopify = FakeShopify(tracked=True)
+    throttled = {"errors": [{"message": "Throttled", "extensions": {"code": "THROTTLED"}}]}
+    shopify.failures = [httpx.Response(200, json=throttled)]
+    clock = FakeClock()
+    client_for(shopify, clock).set_available(VARIANT, 0)
+    assert clock.now() > 0
+    assert "inventorySetQuantities" in shopify.operations()
+
+
+def test_connection_error_is_retried() -> None:
+    shopify = FakeShopify(tracked=True)
+    shopify.failures = [httpx.ConnectError("reset")]
+    client_for(shopify).set_available(VARIANT, 0)
+    assert "inventorySetQuantities" in shopify.operations()
+
+
+def test_persistent_connection_error_becomes_a_shopify_error() -> None:
+    shopify = FakeShopify(tracked=True)
+    shopify.failures = [httpx.ConnectError("reset")] * 10
+    with pytest.raises(ShopifyError, match="could not reach"):
+        client_for(shopify).set_available(VARIANT, 0)
+
+
+def test_shop_without_locations_raises_a_shopify_error() -> None:
+    shopify = FakeShopify(tracked=True)
+    shopify.locations = []
+    with pytest.raises(ShopifyError, match="no location"):
+        client_for(shopify).set_available(VARIANT, 0)

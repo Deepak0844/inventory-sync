@@ -117,6 +117,8 @@ def create_mock_app(state: MockState | None = None) -> FastAPI:
 
     @app.post("/verify", response_model=None)
     def verify(request: Request, code: str = Form()) -> Response:
+        if state.captcha:
+            return _page("<p>Please complete the CAPTCHA</p>", 403)
         if request.cookies.get("pre_auth") != "1" or code != state.code:
             return _page("<p>Wrong code</p>", 401)
         token = secrets.token_hex(8)

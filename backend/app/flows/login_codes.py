@@ -4,11 +4,15 @@ Not responsible for typing the code into the Supplier's site or for counting
 failed attempts.
 """
 
+import logging
+import threading
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
-from app.core.clock import Clock
-from app.mail.codes import MailMessage, extract_login_code
+from app.core.clock import Clock, SystemClock
+from app.mail.codes import MailboxError, MailMessage, extract_login_code
+
+logger = logging.getLogger(__name__)
 
 
 class CodeSource(Protocol):
@@ -22,17 +26,28 @@ class CodeSource(Protocol):
 class PastedCodeSource:
     """Codes pasted in the dashboard. Each is handed out once."""
 
-    def __init__(self) -> None:
-        self._code: str | None = None
+    def __init__(self, clock: Clock | None = None) -> None:
+        self._clock = clock or SystemClock()
+        self._lock = threading.Lock()  # submit() runs on an API thread, poll() on the worker
+        self._pasted: tuple[str, float] | None = None
 
     def submit(self, code: str) -> None:
-        """Store a pasted code for the waiting run."""
-        self._code = code
+        """Store a pasted code, with the time it arrived, for the waiting run."""
+        with self._lock:
+            self._pasted = (code, self._clock.now())
 
     def poll(self, requested_at: float) -> str | None:
-        """Return the pasted code and forget it, so it is never reused."""
-        code, self._code = self._code, None
-        return code
+        """Return the pasted code and forget it, so it is never reused.
+
+        A code pasted before `requested_at` belongs to no run that is waiting
+        (an earlier timeout, or pasted too early), so it is discarded rather
+        than risk counting a wrong-code failed attempt.
+        """
+        with self._lock:
+            pasted, self._pasted = self._pasted, None
+        if pasted is None or pasted[1] < requested_at:
+            return None
+        return pasted[0]
 
 
 class MailboxCodeSource:
@@ -46,8 +61,17 @@ class MailboxCodeSource:
         self._pattern = pattern
 
     def poll(self, requested_at: float) -> str | None:
-        """Return a code from a new email from the Supplier's sender, if any."""
-        return extract_login_code(self._fetch(), self._sender, self._pattern, requested_at)
+        """Return a code from a new email from the Supplier's sender, if any.
+
+        A mailbox failure is logged and treated as "no code yet", so the pasted
+        path can still succeed while the mailbox is down.
+        """
+        try:
+            messages = self._fetch()
+        except MailboxError:
+            logger.warning("mailbox unavailable while waiting for a Login Code", exc_info=True)
+            return None
+        return extract_login_code(messages, self._sender, self._pattern, requested_at)
 
 
 def await_login_code(

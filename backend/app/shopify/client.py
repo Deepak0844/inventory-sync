@@ -70,7 +70,10 @@ class ShopifyClient:
         item = variant["inventoryItem"]
         if not item["tracked"]:
             self._mutate(_TRACK, {"id": item["id"]}, "inventoryItemUpdate")
-        location = self._query(_LOCATION, {})["locations"]["nodes"][0]["id"]
+        locations = self._query(_LOCATION, {})["locations"]["nodes"]
+        if not locations:
+            raise ShopifyError("shop has no location to stock inventory at")
+        location = locations[0]["id"]
         quantities = [{"inventoryItemId": item["id"], "locationId": location, "quantity": quantity}]
         self._mutate(
             _SET,
@@ -91,19 +94,35 @@ class ShopifyClient:
             raise ShopifyError("; ".join(e["message"] for e in errors))
 
     def _query(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+        payload = {"query": query, "variables": variables}
         for attempt in range(MAX_ATTEMPTS):
-            payload = {"query": query, "variables": variables}
-            response = self._http.post("/graphql.json", json=payload)
+            last = attempt == MAX_ATTEMPTS - 1
+            try:
+                response = self._http.post("/graphql.json", json=payload)
+            except httpx.TransportError as exc:
+                if last:
+                    raise ShopifyError("could not reach Shopify after retries") from exc
+                self._clock.sleep(BACKOFF_SECONDS * 2**attempt)
+                continue
             if response.status_code == 429 or response.status_code >= 500:
-                if attempt < MAX_ATTEMPTS - 1:
-                    self._clock.sleep(BACKOFF_SECONDS * 2**attempt)
-                    continue
-                raise ShopifyError(f"Shopify returned {response.status_code} after retries")
+                if last:
+                    raise ShopifyError(f"Shopify returned {response.status_code} after retries")
+                self._clock.sleep(BACKOFF_SECONDS * 2**attempt)
+                continue
             if response.status_code != 200:
                 raise ShopifyError(f"Shopify returned {response.status_code}")
             body = response.json()
-            if body.get("errors"):
-                raise ShopifyError(str(body["errors"]))
+            errors = body.get("errors")
+            if errors:
+                # Shopify reports GraphQL throttling as a 200 with this error code.
+                if _is_throttled(errors) and not last:
+                    self._clock.sleep(BACKOFF_SECONDS * 2**attempt)
+                    continue
+                raise ShopifyError(str(errors))
             data: dict[str, Any] = body["data"]
             return data
         raise ShopifyError("unreachable")  # pragma: no cover
+
+
+def _is_throttled(errors: list[dict[str, Any]]) -> bool:
+    return any(e.get("extensions", {}).get("code") == "THROTTLED" for e in errors)

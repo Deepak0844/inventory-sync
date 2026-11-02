@@ -8,11 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 from imap_tools import AND, MailBox
 
-from app.mail.codes import MailMessage
-
-
-class MailboxError(Exception):
-    """The mailbox could not be read."""
+from app.mail.codes import MailboxError, MailMessage
 
 
 class ImapMailbox:

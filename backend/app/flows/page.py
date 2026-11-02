@@ -6,6 +6,10 @@ Playwright's `Page` satisfies these structurally.
 from typing import Protocol
 
 
+class PageError(Exception):
+    """The browser failed to do something (timeout, navigation error, closed page)."""
+
+
 class PageResponse(Protocol):
     """The response to a navigation."""
 
