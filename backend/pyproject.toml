@@ -11,6 +11,10 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "alembic>=1.13",
     "cryptography>=43",
+    "python-multipart>=0.0.33",
+    "httpx>=0.28.1",
+    "playwright>=1.64.1",
+    "imap-tools>=1.16.0",
 ]
 
 [dependency-groups]
