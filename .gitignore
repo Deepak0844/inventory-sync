@@ -1,0 +1,46 @@
+# Secrets and local config
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Supplier sessions and screenshots (can contain account data)
+data/
+screenshots/
+sessions/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Node and frontend
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+.vite/
+
+# Tests and coverage
+.coverage
+htmlcov/
+playwright-report/
+test-results/
+
+# Local database volume and per-machine overrides
+pgdata/
+docker-compose.override.yml
+
+# Installed agent skills and Claude Code local settings
+.agents/
+.claude/
+
+# Design skill working files
+.taste-skill/
+
+# OS and editor
+.DS_Store
+.idea/
