@@ -31,3 +31,7 @@ def test_mask_secrets_replaces_every_occurrence() -> None:
 
 def test_mask_secrets_ignores_empty_secret() -> None:
     assert mask_secrets("abc", [""]) == "abc"
+
+
+def test_mask_secrets_hides_longer_secret_that_contains_a_shorter_one() -> None:
+    assert mask_secrets("token abcdef", ["abc", "abcdef"]) == "token ***"

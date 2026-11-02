@@ -21,7 +21,9 @@ class PostgresDatabase:
     """Postgres-backed implementation of `Database`."""
 
     def __init__(self, url: str) -> None:
-        self.engine: Engine = create_engine(url, pool_pre_ping=True)
+        self.engine: Engine = create_engine(
+            url, pool_pre_ping=True, connect_args={"connect_timeout": 3}
+        )
 
     def ping(self) -> bool:
         """Return True if `SELECT 1` succeeds; a failure is reported, not raised."""

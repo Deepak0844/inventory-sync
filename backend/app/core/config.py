@@ -5,7 +5,8 @@ Not responsible for building the database engine or the encryption box.
 
 from functools import lru_cache
 
-from pydantic import SecretStr
+from cryptography.fernet import Fernet
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,9 +15,20 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    database_url: str
+    # SecretStr because the URL embeds the Postgres password.
+    database_url: SecretStr
     # SecretStr keeps the key out of reprs and logs.
     encryption_key: SecretStr
+
+    @field_validator("encryption_key")
+    @classmethod
+    def _key_must_be_a_fernet_key(cls, value: SecretStr) -> SecretStr:
+        """Reject a malformed key at startup instead of at the first encryption."""
+        try:
+            Fernet(value.get_secret_value().encode())
+        except ValueError as exc:
+            raise ValueError("ENCRYPTION_KEY is not a valid Fernet key") from exc
+        return value
 
 
 @lru_cache
