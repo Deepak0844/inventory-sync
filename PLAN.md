@@ -320,6 +320,9 @@ The React Flow editor saves a graph like this. The worker walks the nodes in ord
 {
   "supplier": "supplier-a",
   "version": 3,
+  "login_path": "/login",
+  "logged_in_url": "https://supplier-a.example/account",
+  "blocked_if": { "contains": "CAPTCHA" },
   "nodes": [
     { "id": "n1", "type": "goto", "url": "https://supplier-a.example/login" },
     { "id": "n2", "type": "fill", "selector": "#email", "value": "{{credentials.username}}" },
@@ -346,7 +349,9 @@ The React Flow editor saves a graph like this. The worker walks the nodes in ord
 }
 ```
 
-Node types: `goto`, `fill`, `click`, `wait_for`, `await_code`, `extract`, `branch`, `save_session`, and `code` for odd sites. The editor adds a **Test run** (a screenshot after each step) and a **selector picker**.
+`login_path` (used to notice a lost session), `logged_in_url` (opened to test a saved session; the logged-in marker is the `wait_for` with that role) and `blocked_if` (page text that means a CAPTCHA or block) are required. An edge leaving a `branch` is `["from", "to", "yes"]` or `["from", "to", "no"]`. Reading a Listing is the `extract` section, not a node. Examples of every node are in [docs/flow-nodes.md](docs/flow-nodes.md).
+
+Node types: `goto`, `fill`, `click`, `wait_for`, `await_code`, `branch` and `save_session`. The `code` node for odd sites is not built yet because it runs arbitrary code and needs a sandbox decision first. The editor adds a **Test run** (a screenshot after each step) and a **selector picker**.
 
 ## 12. Adding a Supplier
 
