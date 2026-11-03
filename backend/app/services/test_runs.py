@@ -65,15 +65,23 @@ def start_test_run(
         raise SupplierNotFound(supplier_id)
     runs = FlowTestRunRepo(session)
     problems: list[str] = []
-    if suppliers.get_credentials(supplier_id) is None:
-        problems.append("Add the Supplier's credentials before a Test run.")
     if mode == "extract" and not listing_url:
         problems.append("Give a Listing URL to test the extract step.")
     raw = flow if flow is not None else suppliers.get_flow(supplier_id)
     if raw is None:
         problems.append("This Supplier has no flow yet. Save one or send a draft.")
     else:
-        problems += _flow_problems(raw, up_to_node_id)
+        parsed, found = _parse_draft(raw, up_to_node_id)
+        problems += found
+        if parsed is not None:
+            # A snapshot of the login page needs no password, and the owner needs that snapshot
+            # to pick the selectors in the first place, so only demand what will really run.
+            if (mode == "extract" or parsed.uses_credentials(up_to_node_id)) and (
+                suppliers.get_credentials(supplier_id) is None
+            ):
+                problems.append("Add the Supplier's credentials before a Test run.")
+            if mode == "extract" and not parsed.extract.stock_selector:
+                problems.append("Choose the Stock element first (under Stock rules).")
     if problems:
         raise RunRequestInvalid(problems)
     open_run = runs.open_for_supplier(supplier_id, now)
@@ -87,15 +95,19 @@ def start_test_run(
     return run_id
 
 
-def _flow_problems(raw: dict[str, Any], up_to_node_id: str | None) -> list[str]:
+def _parse_draft(
+    raw: dict[str, Any], up_to_node_id: str | None
+) -> tuple[FlowDefinition | None, list[str]]:
+    """Validate a draft as a Test run accepts it: structure must be right, but the stock
+    selector may still be empty. Returns the flow (None if invalid) and the problems."""
     try:
-        flow = FlowDefinition.model_validate(raw)
+        flow = FlowDefinition.model_validate(raw, context={"draft": True})
     except ValidationError as exc:
-        return [f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}".lstrip(": ")
-                for e in exc.errors()]
+        return None, [f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}".lstrip(": ")
+                      for e in exc.errors()]
     if up_to_node_id is not None and up_to_node_id not in {n.id for n in flow.nodes}:
-        return [f"The flow has no node {up_to_node_id!r}."]
-    return []
+        return None, [f"The flow has no node {up_to_node_id!r}."]
+    return flow, []
 
 
 def get_test_run(session: Session, run_id: int) -> FlowTestRunRecord:

@@ -155,7 +155,12 @@ def handle_test_run(deps: Deps, session: Session, job: JobRecord) -> None:
         if supplier is None:
             raise _Failed("That Supplier no longer exists.")
         if credentials is None:
-            raise _Failed("Add the Supplier's credentials before a Test run.")
+            # Only steps that type the username or password need them; a snapshot of the first
+            # page does not, and it is how the owner picks the selectors in the first place.
+            flow = _flow_for(session, deps, run, supplier)
+            if run.mode == "extract" or flow.uses_credentials(run.request.get("up_to_node_id")):
+                raise _Failed("Add the Supplier's credentials before a Test run.")
+            credentials = Credentials("", "")
         _execute(deps, session, repo, run, supplier, credentials)
     except _Failed as exc:
         repo.finish(run_id, "failed", deps.now(), error=str(exc))
@@ -175,7 +180,7 @@ def _flow_for(session: Session, deps: Deps, run: FlowTestRunRecord, supplier: Su
     if raw is None:
         raise _Failed("This Supplier has no flow yet.")
     try:
-        return for_supplier(FlowDefinition.model_validate(raw), supplier)
+        return for_supplier(FlowDefinition.model_validate(raw, context={"draft": True}), supplier)
     except ValidationError as exc:
         raise _Failed("The flow is not valid: " + "; ".join(
             str(e["msg"]) for e in exc.errors())[:300]) from None

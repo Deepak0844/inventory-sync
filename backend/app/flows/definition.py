@@ -4,7 +4,7 @@ Not responsible for running a flow; `app.flows.runner` does. Everything wrong
 with a definition is reported when it is loaded, not in the middle of a run.
 """
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from app.flows.nodes import FlowNode
 from app.flows.nodes.branch import Branch
@@ -23,10 +23,19 @@ class Condition(BaseModel):
 class ExtractRules(BaseModel):
     """How to read a Listing's Stock Status."""
 
-    stock_selector: str = Field(min_length=1)
+    stock_selector: str
     in_stock_if: Condition
     out_of_stock_if: Condition
     quantity_selector: str | None = None
+
+    @field_validator("stock_selector")
+    @classmethod
+    def _stock_selector_required(cls, value: str, info: ValidationInfo) -> str:
+        """Require it when saving. A Test run draft may leave it empty, because the owner
+        needs a snapshot of the page to pick it from (pass `context={"draft": True}`)."""
+        if not value and not (info.context or {}).get("draft"):
+            raise ValueError("String should have at least 1 character")
+        return value
 
 
 class FlowDefinition(BaseModel):
@@ -118,6 +127,25 @@ class FlowDefinition(BaseModel):
             )
         if not passes[order[0]]:
             raise ValueError("the logged_in_marker wait_for must be reached on every path")
+
+    def uses_credentials(self, up_to_node_id: str | None = None) -> bool:
+        """Whether the steps that will run type the username or password.
+
+        Args:
+            up_to_node_id: A run that stops after this node only runs the steps leading to it.
+                None means the whole flow.
+        """
+        if up_to_node_id is None:
+            running = {n.id for n in self.nodes}
+        else:
+            running, queue = set(), [up_to_node_id]
+            while queue:
+                node_id = queue.pop()
+                if node_id not in running:
+                    running.add(node_id)
+                    queue += [e[0] for e in self.edges if e[1] == node_id]
+        return any(isinstance(n, Fill) and "credentials." in n.value
+                   for n in self.nodes if n.id in running)
 
     @property
     def start(self) -> FlowNode:
