@@ -373,3 +373,15 @@ def test_the_worker_loop_fails_a_run_that_never_finished(
     finally:
         stop.set()
         thread.join(timeout=5)
+
+
+def test_a_snapshot_before_any_login_step_runs_without_credentials(
+    make_world: Callable[..., World], tmp_path: Path
+) -> None:
+    w, site = logged_out(make_world)
+    w.session.execute(text("UPDATE suppliers SET username_enc = NULL, password_enc = NULL"))
+    w.session.commit()
+    site.html = '<form><input id="email"></form>'
+    run = start(w, tmp_path, up_to_node_id="n1")
+    assert run.state == "done" and run.login_result == "stopped_after_node"
+    assert run.snapshot is not None

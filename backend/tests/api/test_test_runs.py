@@ -241,3 +241,32 @@ def test_one_runs_files_are_not_served_under_another_runs_id(
     with factory() as session:
         other = FlowTestRunRepo(session).create(other_supplier, "login", {}, T0)
     assert auth.get(f"/api/test-runs/{other}/files/step-1.png").status_code == 404
+
+
+def bare_draft() -> dict[str, Any]:
+    """A fresh outline: nothing picked yet, so no stock selector."""
+    draft = sample_flow_dict()
+    draft["extract"]["stock_selector"] = ""
+    return draft
+
+
+def test_a_snapshot_of_the_first_page_needs_neither_credentials_nor_a_stock_selector(
+    auth: TestClient,
+) -> None:
+    sid = supplier(auth, credentials=False, flow=False)
+    assert post(auth, sid, flow=bare_draft(), up_to_node_id="n1").status_code == 202
+
+
+def test_a_snapshot_after_a_step_that_types_the_password_still_needs_credentials(
+    auth: TestClient,
+) -> None:
+    sid = supplier(auth, credentials=False, flow=False)
+    response = post(auth, sid, flow=bare_draft(), up_to_node_id="n3")
+    assert response.status_code == 422 and "credentials" in str(response.json()).lower()
+
+
+def test_testing_a_listing_needs_the_stock_selector(auth: TestClient) -> None:
+    sid = supplier(auth, flow=False)
+    response = post(auth, sid, flow=bare_draft(), mode="extract",
+                    listing_url="https://a.example/p/1")
+    assert response.status_code == 422 and "stock element" in str(response.json()).lower()

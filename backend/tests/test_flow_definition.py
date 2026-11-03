@@ -164,3 +164,28 @@ def test_template_outside_fill_is_rejected() -> None:
 
     with pytest.raises(ValidationError, match="only supported in fill"):
         load(in_url)
+
+
+def test_an_empty_stock_selector_is_refused_when_saving() -> None:
+    def empty(d: dict[str, Any]) -> None:
+        d["extract"]["stock_selector"] = ""
+
+    with pytest.raises(ValidationError, match="stock_selector"):
+        load(empty)
+
+
+def test_an_empty_stock_selector_is_allowed_in_a_draft() -> None:
+    data = deepcopy(sample_flow_dict())
+    data["extract"]["stock_selector"] = ""
+    flow = FlowDefinition.model_validate(data, context={"draft": True})
+    assert flow.extract.stock_selector == ""
+
+
+@pytest.mark.parametrize(
+    ("stop", "expected"),
+    [(None, True), ("n1", False), ("n2", True), ("n4", True)],
+)
+def test_credentials_are_only_needed_by_the_steps_that_will_run(
+    stop: str | None, expected: bool
+) -> None:
+    assert load().uses_credentials(stop) is expected
