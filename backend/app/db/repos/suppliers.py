@@ -67,7 +67,7 @@ class SupplierRepo:
         """
         _check(fields)
         supplier = Supplier(name=name, site_url=site_url, created_at=now,
-                            two_fa_methods=["ui_code"], **fields)
+                            **{"two_fa_methods": ["ui_code"], **fields})
         self._s.add(supplier)
         self._s.commit()
         return self._record(supplier)

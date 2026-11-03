@@ -175,6 +175,16 @@ class CatalogRepo:
         ]
         return ListingPage(items, total, str(items[-1].id) if len(rows) > limit else None)
 
+    def variant_exists(self, variant_id: int) -> bool:
+        """Whether a Variant with this id exists."""
+        return self._s.get(Variant, variant_id) is not None
+
+    def existing_listing_ids(self, listing_ids: list[int]) -> set[int]:
+        """Return which of `listing_ids` are real Listings."""
+        if not listing_ids:
+            return set()
+        return set(self._s.scalars(select(Listing.id).where(Listing.id.in_(listing_ids))))
+
     def get_mappings(self, variant_id: int) -> list[MappingRecord]:
         """Return a Variant's mappings, highest priority (lowest number) first."""
         rows = self._s.execute(

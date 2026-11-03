@@ -50,6 +50,19 @@ class NotificationRepo:
         return [NotificationRecord(n.id, n.kind, n.supplier_id, name, n.message, n.created_at,
                                    n.resolved_at, n.screenshot_path) for n, name in rows]
 
+    def get(self, notification_id: int) -> NotificationRecord | None:
+        """Return one notification, or None."""
+        row = self._s.execute(
+            select(Notification, Supplier.name)
+            .outerjoin(Supplier, Supplier.id == Notification.supplier_id)
+            .where(Notification.id == notification_id)
+        ).one_or_none()
+        if row is None:
+            return None
+        n, name = row
+        return NotificationRecord(n.id, n.kind, n.supplier_id, name, n.message, n.created_at,
+                                  n.resolved_at, n.screenshot_path)
+
     def resolve(self, notification_id: int, now: datetime) -> None:
         """Mark resolved. Resolving again keeps the first time."""
         self._s.execute(update(Notification).where(

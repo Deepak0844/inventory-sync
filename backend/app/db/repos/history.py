@@ -64,6 +64,16 @@ class HistoryRepo:
                                     approval=approval, at=at))
         self._s.commit()
 
+    def all_changes(self) -> list[ChangeRecord]:
+        """Return every change, oldest first (for the daily Sold Out history)."""
+        rows = self._s.execute(
+            select(InventoryChange, Variant.sku)
+            .join(Variant, Variant.id == InventoryChange.variant_id)
+            .order_by(InventoryChange.at, InventoryChange.id)
+        ).all()
+        return [ChangeRecord(c.at, c.variant_id, sku, c.from_state, c.to_state, c.reason,
+                             c.approval) for c, sku in rows]
+
     def recent_changes(self, limit: int) -> list[ChangeRecord]:
         """Return the latest changes, newest first."""
         rows = self._s.execute(
