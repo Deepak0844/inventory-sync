@@ -1,0 +1,40 @@
+/* The only place raw values live. Source: docs/DESIGN.md (primitive, semantic, component). */
+:root {
+  /* primitive */
+  --grey-50: #f9fbfc;  --grey-100: #f4f6f8;  --grey-200: #ebedee;  --grey-300: #e8eaec;
+  --ink-900: #131416;  --grey-600: #5d5f60;  --grey-700: #6b6d6e;
+  --teal-700: #1b6c80;  --blue-600: #2f70bb;
+  --red-600: #c4242a;   --amber-800: #92400e; --green-700: #1e7b4f;
+
+  /* semantic */
+  --ground: var(--grey-50);
+  --surface: #ffffff;
+  --raised: var(--grey-100);
+  --active: var(--grey-200);
+  --border: var(--grey-300);
+  --rule: #f0f1f2;
+  --control: #cdced1;
+  --text: var(--ink-900);
+  --muted: var(--grey-600);
+  --faint: var(--grey-700);
+  --accent: var(--teal-700);
+  --chart-1: var(--teal-700);
+  --chart-2: var(--blue-600);
+  --chart-3: #a86f0c;
+  --positive: var(--green-700);
+  --negative: var(--red-600);
+  --warning: var(--amber-800);
+
+  /* component */
+  --pill-positive-bg: #dcfae5; --pill-positive-ink: #04250e;
+  --pill-negative-bg: #ffedea; --pill-negative-ink: #831c1e;
+  --pill-warning-bg:  #fffbeb; --pill-warning-ink:  #92400e;
+  --pill-neutral-bg:  #ebedee; --pill-neutral-ink:  #353736;
+
+  --radius-card: 8px;  --radius-control: 6px;  --radius-sheet: 16px;  --sheet-inset: 8px;
+  --row-height: 48px;  --sidebar-width: 228px;  --topbar-height: 48px;
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px;  --space-4: 16px;  --space-6: 24px;  --space-8: 32px;
+  --gap: 24px;  --pad: 24px;  --control-height: 32px;  --touch: 44px;
+  --strip-height: 28px;  --reading-width: 192px;  --icon: 16px;  --tick: 2px;  --track: 2px;
+  --fs-title: 22px;  --fs-section: 16px;  --fs-kpi: 28px;  --fs-body: 14px;  --fs-small: 12px;
+}
