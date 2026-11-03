@@ -12,11 +12,12 @@ import { sampleFlow } from "./testData";
 import { installBrowserShims } from "./testSupport";
 import type { SelectorColumnProps } from "./SelectorColumn";
 
+/** `null` is how the API says the Supplier has no flow yet; any other status is a real error. */
 const serve = (flow: Record<string, unknown> | null = sampleFlow() as never, status = 200) => {
   server.use(
     http.get(`${API}/suppliers/1`, () => HttpResponse.json(supplier())),
     http.get(`${API}/suppliers/1/flow`, () =>
-      status === 200 ? HttpResponse.json(flow) : HttpResponse.json({ detail: "No flow yet" }, { status }),
+      status === 200 ? HttpResponse.json(flow) : HttpResponse.json({ detail: "Server error" }, { status }),
     ),
   );
 };
@@ -40,7 +41,7 @@ it("shows an error with Retry when the flow cannot be loaded", async () => {
 });
 
 it("starts a Supplier with no flow from a login outline and says so", async () => {
-  serve(null, 404);
+  serve(null);
   open();
   expect(await screen.findByText("https://supplier-a.example/login")).toBeInTheDocument();
   expect(screen.getByText(/No flow yet/)).toBeInTheDocument();
@@ -254,7 +255,7 @@ it("asks the server again when opened, so a flow deleted meanwhile is not shown 
   serve(old as never);
   const store = makeStore();
   await store.dispatch(api.endpoints.flow.initiate(1)).unwrap(); // the flow is now cached
-  serve(null, 404); // ...and then removed on the server
+  serve(null); // ...and then removed on the server
   renderApp(<FlowBuilder supplierId={1} SelectorPanel={() => null} />, "/flows/1", store);
   expect(await screen.findByText(/No flow yet/)).toBeInTheDocument();
   expect(screen.queryByText("https://old.example/OLD-SAVED-LOGIN")).not.toBeInTheDocument();

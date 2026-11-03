@@ -92,15 +92,16 @@ def get_credentials(supplier_id: int, session: Db, box: Box) -> CredentialsOut:
 
 
 @router.get("/suppliers/{supplier_id}/flow")
-def get_flow(supplier_id: int, session: Db, box: Box) -> FlowJson:
-    """Return the flow JSON (404 if the Supplier or its flow does not exist)."""
+def get_flow(supplier_id: int, session: Db, box: Box) -> FlowJson | None:
+    """Return the flow JSON, or null when the Supplier has no flow (404 for an unknown Supplier).
+
+    "No flow yet" is a normal state, not an error: a 404 here shows as a red error in the browser
+    console every time the Flows list loads.
+    """
     try:
-        flow = service.get_flow(session, box, supplier_id)
+        return service.get_flow(session, box, supplier_id)
     except service.SupplierNotFound:
         raise NOT_FOUND from None
-    if flow is None:
-        raise HTTPException(status_code=404, detail="No flow yet")
-    return flow
 
 
 @router.put("/suppliers/{supplier_id}/flow")

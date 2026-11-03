@@ -11,7 +11,7 @@ it("lists each Supplier with its flow status, linked to its builder", async () =
   server.use(
     http.get(`${API}/suppliers`, () => HttpResponse.json([supplier({ id: 1, name: "Supplier A" }), supplier({ id: 2, name: "Supplier B" })])),
     http.get(`${API}/suppliers/1/flow`, () => HttpResponse.json(sampleFlow())),
-    http.get(`${API}/suppliers/2/flow`, () => HttpResponse.json({ detail: "No flow yet" }, { status: 404 })),
+    http.get(`${API}/suppliers/2/flow`, () => HttpResponse.json(null)),
   );
   renderApp(<FlowList />);
   expect(await screen.findByRole("link", { name: "Supplier A" })).toHaveAttribute("href", "/flows/1");

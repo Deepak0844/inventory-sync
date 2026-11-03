@@ -14,9 +14,8 @@ export function FlowTab({ supplierId }: { supplierId: number }) {
   const [errors, setErrors] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
 
-  const noFlowYet = (q.error as { status?: number } | undefined)?.status === 404;
   if (q.isLoading) return <BlockState kind="loading" />;
-  if (q.isError && !noFlowYet) {
+  if (q.isError) {
     return <BlockState kind="error" message="Couldn't load the flow." onRetry={() => void q.refetch()} />;
   }
   const value = text ?? (q.data ? JSON.stringify(q.data, null, 2) : "{}");

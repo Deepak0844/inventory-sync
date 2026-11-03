@@ -58,7 +58,7 @@ export const api = createApi({
       query: ({ id, ...body }) => ({ url: `/suppliers/${id}/credentials`, method: "PUT", body }),
       invalidatesTags: (_r, _e, { id }) => [{ type: "Credentials", id }],
     }),
-    flow: b.query<FlowDefinition, number>({
+    flow: b.query<FlowDefinition | null, number>({
       query: (id) => `/suppliers/${id}/flow`,
       providesTags: (_r, _e, id) => [{ type: "Flow", id }],
     }),
