@@ -37,6 +37,28 @@ Add the printed secret to an authenticator app, then sign in with your username,
 
 Shopify and mailbox credentials are entered under Settings in the dashboard. The Shopify app needs the scopes `read_products`, `read_inventory`, `write_inventory` and `read_orders`. Use a development store until a real Supplier is approved.
 
+### Manual login on a VPS
+
+If a Supplier presents a CAPTCHA, use the optional private browser to complete that login yourself. This does not bypass CAPTCHA: it gives you the same visible Playwright browser that later scheduled checks reuse through encrypted browser storage.
+
+Set these values in `.env`, using a strong dedicated VNC password:
+
+```dotenv
+MANUAL_BROWSER_ENABLED=true
+MANUAL_BROWSER_PASSWORD=change-this-password
+```
+
+Start the profile, then open an SSH tunnel from your laptop:
+
+```bash
+docker compose --profile manual-login up -d --build
+ssh -N -L 6080:127.0.0.1:6080 your-user@your-vps
+```
+
+In the Supplier's Login tab, choose **Manual login**, then **Open private browser**. Enter `MANUAL_BROWSER_PASSWORD` when noVNC asks, finish the login or CAPTCHA, and leave the page signed in. Inventory Sync detects the flow's logged-in marker and encrypts the complete browser session for later runs.
+
+Port 6080 is bound to VPS loopback by Compose. Do not publish it on `0.0.0.0`, and do not put noVNC behind the public Caddy site. The session expires after 10 minutes; use Cancel to close it sooner. A CAPTCHA may still reappear later because the Supplier controls its risk checks.
+
 ## Develop
 
 ```bash

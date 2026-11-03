@@ -54,7 +54,8 @@ Each Supplier has an ordered list of 2FA methods. The default is **UI code first
 - When both are enabled they run at the same time and the **first code wins**. If the mailbox delivers the code, the prompt is dismissed automatically and no one has to be present. If it doesn't, you paste it.
 - Prompt window: 10 minutes (editable per Supplier). An unanswered prompt cancels the run and the Supplier shows "Needs code". It does not count as a failed login. Only a wrong code does.
 - Sessions are kept as long as possible by ticking "trust this device" in the flow. The dashboard shows each Supplier's session age.
-- A live streamed browser inside the dashboard is out of scope for now.
+- An embedded or publicly streamed browser inside the dashboard is out of scope. An optional
+  loopback-only noVNC browser can be reached through an SSH tunnel for manual CAPTCHA/login.
 
 ### Dashboard
 - Single admin login with 2FA. The data model leaves room for more users later.
