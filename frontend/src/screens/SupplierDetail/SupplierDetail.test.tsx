@@ -162,7 +162,7 @@ it("lists runs and can start a check now", async () => {
 });
 
 describe("Settings tab", () => {
-  it("saves the Supplier's rules", async () => {
+  it("saves the Supplier's website URL and rules", async () => {
     let body: Record<string, unknown> = {};
     server.use(
       http.patch(`${API}/suppliers/1`, async ({ request }) => {
@@ -172,13 +172,33 @@ describe("Settings tab", () => {
     );
     open();
     await userEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+    const siteUrl = await screen.findByLabelText("Site URL");
+    expect(siteUrl).toHaveValue("https://supplier-a.example");
+    await userEvent.clear(siteUrl);
+    await userEvent.type(siteUrl, "https://new-supplier.example");
     const reads = await screen.findByLabelText("Out of Stock reads to confirm");
     expect(reads).toHaveValue(2);
     await userEvent.clear(reads);
     await userEvent.type(reads, "3");
     await userEvent.click(screen.getByLabelText("Treat a removed Listing as Unknown"));
     await userEvent.click(screen.getByRole("button", { name: "Save settings" }));
-    await waitFor(() => expect(body).toMatchObject({ out_confirm_reads: 3, removed_as_unknown: true, interval_min: 180, max_quantity: 100 }));
+    await waitFor(() => expect(body).toMatchObject({
+      site_url: "https://new-supplier.example",
+      out_confirm_reads: 3,
+      removed_as_unknown: true,
+      interval_min: 180,
+      max_quantity: 100,
+    }));
+  });
+
+  it("requires a full website URL", async () => {
+    open();
+    await userEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+    const siteUrl = await screen.findByLabelText("Site URL");
+    await userEvent.clear(siteUrl);
+    await userEvent.type(siteUrl, "supplier.example");
+    await userEvent.click(screen.getByRole("button", { name: "Save settings" }));
+    expect(await screen.findByText("Enter a full address, like https://supplier.example.")).toBeInTheDocument();
   });
 
   it("rejects a number below one", async () => {

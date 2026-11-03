@@ -139,7 +139,7 @@ function Editor({ supplier, initial, startsNew, SelectorPanel }: EditorProps) {
           <div className="ml-auto flex items-center gap-2">
             {!local.ok ? <p className="text-small text-negative">Fix {plural(problemCount)} to save</p> : null}
             <Button look="secondary" onClick={revert} disabled={!edited}>Revert</Button>
-            <Button onClick={() => void onSave()} disabled={!canSave}>Save</Button>
+            {!selected ? <Button onClick={() => void onSave()} disabled={!canSave}>Save</Button> : null}
           </div>
         ) : null}
       </header>
@@ -189,7 +189,8 @@ function Editor({ supplier, initial, startsNew, SelectorPanel }: EditorProps) {
               />
               </PickFlashContext.Provider>
               {selected ? (
-                <div className="mt-3">
+                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-rule pt-3">
+                  <Button onClick={() => void onSave()} disabled={!canSave}>Save changes</Button>
                   <Button look="text" onClick={() => dispatch({ kind: "remove", id: selected.id })}>Remove this step</Button>
                 </div>
               ) : null}

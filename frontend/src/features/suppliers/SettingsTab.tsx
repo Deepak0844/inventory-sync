@@ -11,6 +11,7 @@ import { WHOLE_NUMBER_MESSAGE } from "./format";
 
 const whole = z.number({ invalid_type_error: WHOLE_NUMBER_MESSAGE }).int(WHOLE_NUMBER_MESSAGE).min(1, WHOLE_NUMBER_MESSAGE);
 const schema = z.object({
+  site_url: z.string().trim().url("Enter a full address, like https://supplier.example."),
   interval_min: whole,
   out_confirm_reads: whole,
   in_confirm_reads: whole,
@@ -22,6 +23,7 @@ const schema = z.object({
 type Values = z.infer<typeof schema>;
 
 const pick = (s: Supplier): Values => ({
+  site_url: s.site_url,
   interval_min: s.interval_min,
   out_confirm_reads: s.out_confirm_reads,
   in_confirm_reads: s.in_confirm_reads,
@@ -57,6 +59,7 @@ export function SettingsTab({ supplier }: { supplier: Supplier }) {
 
   return (
     <form onSubmit={submit} noValidate className="flex max-w-md flex-col gap-4">
+      <TextField label="Site URL" type="url" error={errors.site_url?.message} {...register("site_url")} />
       {FIELDS.map(([name, label]) => (
         <TextField
           key={name}
