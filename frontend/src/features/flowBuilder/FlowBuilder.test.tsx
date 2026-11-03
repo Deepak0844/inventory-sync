@@ -2,6 +2,8 @@ import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 
+import { api } from "../../api/api";
+import { makeStore } from "../../store";
 import { API, supplier } from "../suppliers/testData";
 import { renderApp } from "../../test/render";
 import { server } from "../../test/server";
@@ -243,4 +245,17 @@ it("is read only on a phone: no palette, no form, no Save", async () => {
   expect(screen.queryByRole("button", { name: "Branch" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
   expect(screen.queryByLabelText("Login page path")).not.toBeInTheDocument();
+});
+
+
+it("asks the server again when opened, so a flow deleted meanwhile is not shown from the cache", async () => {
+  const old = sampleFlow() as unknown as { nodes: { url?: string }[] };
+  old.nodes[0].url = "https://old.example/OLD-SAVED-LOGIN"; // a URL only the saved flow has
+  serve(old as never);
+  const store = makeStore();
+  await store.dispatch(api.endpoints.flow.initiate(1)).unwrap(); // the flow is now cached
+  serve(null, 404); // ...and then removed on the server
+  renderApp(<FlowBuilder supplierId={1} SelectorPanel={() => null} />, "/flows/1", store);
+  expect(await screen.findByText(/No flow yet/)).toBeInTheDocument();
+  expect(screen.queryByText("https://old.example/OLD-SAVED-LOGIN")).not.toBeInTheDocument();
 });
