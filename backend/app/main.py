@@ -48,6 +48,8 @@ def create_app(
     secure_cookies: bool = True,
     screenshot_dir: Path | None = None,
     data_dir: Path | None = None,
+    manual_browser_enabled: bool = False,
+    manual_browser_url: str = "http://127.0.0.1:6080/vnc.html?autoconnect=true&resize=scale",
 ) -> FastAPI:
     """Build the app. Everything outside the process is injectable so tests use fakes.
 
@@ -69,6 +71,8 @@ def create_app(
         database = postgres
         session_factory = session_factory or sessionmaker(postgres.engine, expire_on_commit=False)
         box = box or SecretBox(settings_.encryption_key.get_secret_value())
+        manual_browser_enabled = settings_.manual_browser_enabled
+        manual_browser_url = settings_.manual_browser_url
     app = FastAPI(title="Inventory Sync", lifespan=_close_database)
     app.state.database = database
     app.state.session_factory = session_factory
@@ -78,6 +82,8 @@ def create_app(
     app.state.secure_cookies = secure_cookies
     app.state.screenshot_dir = screenshot_dir or Path("data/screenshots")
     app.state.data_dir = data_dir or default_data_dir
+    app.state.manual_browser_enabled = manual_browser_enabled
+    app.state.manual_browser_url = manual_browser_url
     app.include_router(health.router)
     app.include_router(auth.router)
     for module in (suppliers, login_code, catalog, approvals, notifications, orders, overview,

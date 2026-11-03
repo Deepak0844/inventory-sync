@@ -143,6 +143,97 @@ def test_login_check_and_retry_queue_work_for_the_worker(
     assert jobs(factory) == [("login", s["id"]), ("check_supplier", s["id"])]
 
 
+def test_manual_login_queues_one_session_and_can_cancel_it(
+    auth: TestClient, factory: sessionmaker[Session]
+) -> None:
+    from tests.fakes import sample_flow_dict
+
+    app: Any = auth.app
+    app.state.manual_browser_enabled = True
+    app.state.manual_browser_url = "http://127.0.0.1:6080/vnc.html"
+    s = add(auth)
+    assert auth.put(f"/api/suppliers/{s['id']}/flow", json=sample_flow_dict()).status_code == 200
+    url = f"/api/suppliers/{s['id']}/manual-login"
+    started = auth.post(url)
+    assert started.status_code == 201
+    assert started.json() == {
+        "id": 1,
+        "state": "queued",
+        "expires_at": "2026-11-03T12:10:00Z",
+        "browser_url": "http://127.0.0.1:6080/vnc.html",
+        "error": None,
+    }
+    assert auth.post(url).json()["id"] == 1
+    assert jobs(factory) == [("manual_login", s["id"])]
+    assert auth.delete(url).status_code == 204
+    assert auth.get(url).json()["session"]["state"] == "cancelled"
+
+
+def test_manual_login_needs_the_private_browser_and_a_complete_flow(auth: TestClient) -> None:
+    s = add(auth)
+    url = f"/api/suppliers/{s['id']}/manual-login"
+    assert auth.get(url).json() == {"enabled": False, "session": None}
+    assert auth.post(url).status_code == 503
+    app: Any = auth.app
+    app.state.manual_browser_enabled = True
+    unavailable = auth.post(url)
+    assert unavailable.status_code == 409
+    assert "complete flow" in unavailable.text.lower()
+
+
+def test_manual_login_accepts_a_draft_with_a_complete_login_path(auth: TestClient) -> None:
+    from tests.fakes import sample_flow_dict
+
+    app: Any = auth.app
+    app.state.manual_browser_enabled = True
+    flow = sample_flow_dict()
+    flow["extract"]["stock_selector"] = ""
+    s = add(auth)
+    assert auth.put(f"/api/suppliers/{s['id']}/flow", json=flow).status_code == 200
+
+    response = auth.post(f"/api/suppliers/{s['id']}/manual-login")
+
+    assert response.status_code == 201
+
+
+def test_a_crashed_manual_browser_expires_and_can_be_started_again(
+    auth: TestClient, clock: Clock,
+) -> None:
+    from tests.fakes import sample_flow_dict
+
+    app: Any = auth.app
+    app.state.manual_browser_enabled = True
+    s = add(auth)
+    assert auth.put(f"/api/suppliers/{s['id']}/flow", json=sample_flow_dict()).status_code == 200
+    url = f"/api/suppliers/{s['id']}/manual-login"
+    assert auth.post(url).json()["id"] == 1
+    clock.advance(minutes=11)
+    expired = auth.get(url).json()["session"]
+    assert expired["state"] == "expired"
+    assert auth.post(url).json()["id"] == 2
+
+
+def test_a_manual_worker_startup_failure_is_shown_and_can_be_retried(
+    auth: TestClient, factory: sessionmaker[Session],
+) -> None:
+    from tests.fakes import sample_flow_dict
+
+    app: Any = auth.app
+    app.state.manual_browser_enabled = True
+    s = add(auth)
+    assert auth.put(f"/api/suppliers/{s['id']}/flow", json=sample_flow_dict()).status_code == 200
+    url = f"/api/suppliers/{s['id']}/manual-login"
+    assert auth.post(url).status_code == 201
+    with factory() as session:
+        session.execute(
+            text("UPDATE jobs SET state = 'failed', last_error = 'browser could not start'")
+        )
+        session.commit()
+    failed = auth.get(url).json()["session"]
+    assert (failed["state"], failed["error"]) == ("failed", "browser could not start")
+    assert auth.post(url).json()["id"] == 2
+
+
 def test_a_second_click_still_answers_202_but_queues_nothing_more(
     auth: TestClient, factory: sessionmaker[Session]
 ) -> None:
@@ -208,3 +299,60 @@ def test_a_supplier_with_no_flow_yet_answers_null_not_an_error(auth: TestClient)
 
 def test_the_flow_of_an_unknown_supplier_is_still_a_404(auth: TestClient) -> None:
     assert auth.get("/api/suppliers/9999/flow").status_code == 404
+
+
+def ready_manual_login(
+    auth: TestClient, factory: sessionmaker[Session], state: str = "ready"
+) -> str:
+    """Enable the private browser, queue a manual login and put the worker's job in `state`."""
+    from app.db.repos.jobs import JobRepo
+    from tests.fakes import sample_flow_dict
+
+    app: Any = auth.app
+    app.state.manual_browser_enabled = True
+    s = add(auth)
+    assert auth.put(f"/api/suppliers/{s['id']}/flow", json=sample_flow_dict()).status_code == 200
+    url = f"/api/suppliers/{s['id']}/manual-login"
+    assert auth.post(url).status_code == 201
+    with factory() as session:
+        JobRepo(session).set_result(1, state)
+    return url
+
+
+def test_done_asks_the_worker_to_close_the_browser_and_check_the_login(
+    auth: TestClient, factory: sessionmaker[Session]
+) -> None:
+    url = ready_manual_login(auth, factory)
+    assert auth.post(f"{url}/finish").status_code == 202
+    assert auth.get(url).json()["session"]["state"] == "finishing"
+
+
+def test_done_is_refused_until_the_browser_is_ready(
+    auth: TestClient, factory: sessionmaker[Session]
+) -> None:
+    url = ready_manual_login(auth, factory, state="queued")
+    refused = auth.post(f"{url}/finish")
+    assert refused.status_code == 409 and "ready" in refused.json()["detail"]
+    assert auth.get(url).json()["session"]["state"] == "queued"
+
+
+def test_done_with_no_manual_login_open_is_refused(auth: TestClient) -> None:
+    app: Any = auth.app
+    app.state.manual_browser_enabled = True
+    s = add(auth)
+    assert auth.post(f"/api/suppliers/{s['id']}/manual-login/finish").status_code == 409
+
+
+def test_done_needs_the_private_browser_and_a_known_supplier(auth: TestClient) -> None:
+    s = add(auth)
+    assert auth.post(f"/api/suppliers/{s['id']}/manual-login/finish").status_code == 503
+    app: Any = auth.app
+    app.state.manual_browser_enabled = True
+    assert auth.post("/api/suppliers/999/manual-login/finish").status_code == 404
+
+
+def test_the_status_shows_the_checking_step(
+    auth: TestClient, factory: sessionmaker[Session]
+) -> None:
+    url = ready_manual_login(auth, factory, state="verifying")
+    assert auth.get(url).json()["session"]["state"] == "verifying"

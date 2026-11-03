@@ -5,7 +5,7 @@ here only queue a job for it.
 """
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from pydantic import ValidationError
@@ -36,6 +36,14 @@ class FlowInvalid(Exception):
         self.messages = messages
 
 
+class ManualLoginUnavailable(Exception):
+    """A manual browser cannot start for this Supplier yet."""
+
+
+class ManualLoginNotReady(Exception):
+    """"Done" was pressed while there is no ready manual browser to finish."""
+
+
 @dataclass(frozen=True)
 class SupplierView:
     """A Supplier as the dashboard shows it, with derived health. No password."""
@@ -58,6 +66,15 @@ class SupplierView:
     last_success_at: datetime | None
     session_age_s: int | None
     listing_count: int
+
+
+@dataclass(frozen=True)
+class ManualLoginView:
+    id: int
+    state: str
+    expires_at: datetime
+    browser_url: str
+    error: str | None
 
 
 def is_overdue(supplier: SupplierRecord, now: datetime) -> bool:
@@ -221,6 +238,86 @@ def queue_action(
     """
     _record(session, box, supplier_id)
     _enqueue_once(session, now, supplier_id, kind)
+
+
+def _manual_view(job: Any, browser_url: str) -> ManualLoginView:
+    expires_at = datetime.fromisoformat(str(job.payload["expires_at"]))
+    state = str(job.payload.get("manual_state", "queued"))
+    if job.state == "failed" and state in {"queued", "ready"}:
+        state = "failed"
+    return ManualLoginView(
+        job.id, state, expires_at,
+        browser_url, job.payload.get("error") or job.last_error,
+    )
+
+
+def start_manual_login(
+    session: Session, box: SecretBox, now: datetime, supplier_id: int, browser_url: str
+) -> ManualLoginView:
+    """Queue one short-lived visible-browser login, idempotently."""
+    _record(session, box, supplier_id)
+    suppliers = SupplierRepo(session, box)
+    raw_flow = suppliers.get_flow(supplier_id) or suppliers.get_flow_draft(supplier_id)
+    try:
+        FlowDefinition.validate_for_manual_login(raw_flow)
+    except (ValidationError, ValueError):
+        raise ManualLoginUnavailable("Save a complete flow before starting manual login") from None
+    jobs = JobRepo(session)
+    latest = jobs.latest("manual_login", supplier_id)
+    if latest is not None:
+        expires_at = datetime.fromisoformat(str(latest.payload["expires_at"]))
+        if latest.state in {"queued", "running"} and expires_at <= now:
+            jobs.set_result(latest.id, "expired")
+            latest = jobs.latest("manual_login", supplier_id)
+    if latest is not None and latest.state in {"queued", "running"}:
+        return _manual_view(latest, browser_url)
+    expires_at = now + timedelta(minutes=10)
+    job_id = jobs.enqueue(
+        "manual_login", supplier_id,
+        {"manual_state": "queued", "expires_at": expires_at.isoformat()}, now, now,
+    )
+    latest = jobs.latest("manual_login", supplier_id)
+    assert latest is not None and latest.id == job_id
+    return _manual_view(latest, browser_url)
+
+
+def get_manual_login(
+    session: Session, box: SecretBox, now: datetime, supplier_id: int, browser_url: str
+) -> ManualLoginView | None:
+    """Return the newest manual-login attempt for a Supplier."""
+    _record(session, box, supplier_id)
+    jobs = JobRepo(session)
+    job = jobs.latest("manual_login", supplier_id)
+    if job is not None:
+        expires_at = datetime.fromisoformat(str(job.payload["expires_at"]))
+        if job.state in {"queued", "running"} and expires_at <= now:
+            jobs.set_result(job.id, "expired")
+            job = jobs.latest("manual_login", supplier_id)
+    return None if job is None else _manual_view(job, browser_url)
+
+
+def cancel_manual_login(session: Session, box: SecretBox, supplier_id: int) -> None:
+    """Cancel a queued or visible manual browser session."""
+    _record(session, box, supplier_id)
+    jobs = JobRepo(session)
+    job = jobs.latest("manual_login", supplier_id)
+    if job is not None and job.state in {"queued", "running"}:
+        jobs.set_result(job.id, "cancelled")
+
+
+def finish_manual_login(session: Session, box: SecretBox, supplier_id: int) -> None:
+    """Tell the worker the owner has finished logging in: close the browser and check the login.
+
+    Raises:
+        SupplierNotFound: if there is no such Supplier.
+        ManualLoginNotReady: if the latest manual login is not `ready` (not started, still
+            starting, or already finished), so a stray click cannot cut a login short.
+    """
+    _record(session, box, supplier_id)
+    jobs = JobRepo(session)
+    job = jobs.latest("manual_login", supplier_id)
+    if job is None or not jobs.advance(job.id, {"ready"}, "finishing"):
+        raise ManualLoginNotReady("Wait until the private browser is ready, then press Done")
 
 
 def retry_supplier(session: Session, box: SecretBox, now: datetime, supplier_id: int) -> None:

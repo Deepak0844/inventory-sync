@@ -191,4 +191,4 @@ def test_browser_timeout_surfaces_as_page_error(browser: Browser) -> None:
 
 def test_session_used_before_it_is_opened_raises_a_specific_error(browser: Browser) -> None:
     with pytest.raises(SessionNotOpenError):
-        PlaywrightSupplierSession(browser).cookies_json()
+        PlaywrightSupplierSession(browser).storage_state_json()

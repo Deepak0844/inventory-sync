@@ -72,17 +72,17 @@ def _saved_session_works(flow: FlowDefinition, ctx: FlowContext) -> bool:
     if saved is None:
         return False
     try:
-        ctx.session.load_cookies_json(saved)
+        ctx.session.load_storage_state_json(saved)
     except (ValueError, PageError):
         # Corrupt value: drop it so it does not break every later run.
         ctx.store.clear()
-        ctx.session.clear_cookies()
+        ctx.session.clear_storage_state()
         return False
     ctx.session.page.goto(flow.logged_in_url)
     if ctx.session.page.is_visible(flow.logged_in_marker):
         return True
     ctx.store.clear()
-    ctx.session.clear_cookies()
+    ctx.session.clear_storage_state()
     return False
 
 

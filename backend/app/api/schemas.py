@@ -82,6 +82,21 @@ class CredentialsOut(BaseModel):
     has_password: bool
 
 
+class ManualLoginOut(BaseModel):
+    id: int
+    state: Literal[
+        "queued", "ready", "finishing", "verifying", "succeeded", "failed", "expired", "cancelled"
+    ]
+    expires_at: datetime
+    browser_url: str
+    error: str | None
+
+
+class ManualLoginStatusOut(BaseModel):
+    enabled: bool
+    session: ManualLoginOut | None
+
+
 class RunOut(Out):
     id: int
     kind: str

@@ -1,6 +1,9 @@
 """Hand-written fakes for the interfaces the app passes in (no patching)."""
 
-from collections.abc import Callable, Sequence
+import json
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 from app.flows.definition import FlowDefinition
@@ -140,11 +143,63 @@ class FakeBrowserSession:
         self.loaded: str | None = None
         self.cleared = 0
 
-    def cookies_json(self) -> str:
-        return '[{"name": "session"}]'
+    def storage_state_json(self) -> str:
+        return '{"cookies": [{"name": "session"}], "origins": []}'
 
-    def load_cookies_json(self, cookies_json: str) -> None:
-        self.loaded = cookies_json
+    def load_storage_state_json(self, state_json: str) -> None:
+        self.loaded = state_json
 
-    def clear_cookies(self) -> None:
+    def clear_storage_state(self) -> None:
         self.cleared += 1
+
+
+class FakeManualBrowser:
+    """The plain Chromium a person logs in with. `stays_open` False means they already closed it."""
+
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+        self.launched: list[tuple[Path, str]] = []
+        self.profile_existed: list[bool] = []
+        self.stays_open = False
+        self._running = False
+
+    @contextmanager
+    def __call__(self, profile_dir: Path, url: str) -> Iterator["FakeManualBrowser"]:
+        self.launched.append((profile_dir, url))
+        self.profile_existed.append(profile_dir.is_dir())
+        self.events.append("browser started")
+        self._running = self.stays_open
+        try:
+            yield self
+        finally:
+            self._running = False
+            self.events.append("browser stopped")
+
+    def is_running(self) -> bool:
+        return self._running
+
+
+class FakeProfileBrowser:
+    """A headless browser opened on the profile the person just used."""
+
+    def __init__(self, page: ScriptedPage, events: list[str]) -> None:
+        self.page = page
+        self.events = events
+        self.opened: list[Path] = []
+        self.error: PageError | None = None
+        self.cookie_domains = [".supplier.test"]
+        self.on_open: Callable[[], None] | None = None
+
+    @contextmanager
+    def __call__(self, profile_dir: Path) -> Iterator[FakeBrowserSession]:
+        if self.error is not None:
+            raise self.error
+        self.opened.append(profile_dir)
+        self.events.append("profile opened")
+        if self.on_open is not None:
+            self.on_open()
+        session = FakeBrowserSession(self.page)
+        cookies = [{"name": "session", "value": "x", "domain": d} for d in self.cookie_domains]
+        session.storage_state_json = lambda: json.dumps(  # type: ignore[method-assign]
+            {"cookies": cookies, "origins": []})
+        yield session

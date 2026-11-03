@@ -3,9 +3,12 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import {
-  useCredentialsQuery, useRetrySupplierMutation, useSetCredentialsMutation, useStartLoginMutation,
+  useCancelManualLoginMutation, useCredentialsQuery, useFinishManualLoginMutation,
+  useManualLoginStatusQuery,
+  useRetrySupplierMutation, useSetCredentialsMutation, useStartLoginMutation,
+  useStartManualLoginMutation,
 } from "../../api/api";
-import type { Supplier } from "../../api/types";
+import type { ManualLogin, Supplier } from "../../api/types";
 import { BlockState } from "../../components/ui/BlockState";
 import { Button } from "../../components/ui/Button";
 import { TextField } from "../../components/ui/TextField";
@@ -19,6 +22,104 @@ const schema = z.object({
 type Values = z.infer<typeof schema>;
 
 const METHOD_NAMES = { ui_code: "Pasted code", email_code: "Mailbox code" } as const;
+
+const OPEN_STATES = new Set<ManualLogin["state"]>(["queued", "ready", "finishing", "verifying"]);
+const CHECKING_STATES = new Set<ManualLogin["state"]>(["finishing", "verifying"]);
+
+function ManualLoginControl({ supplierId }: { supplierId: number }) {
+  const status = useManualLoginStatusQuery(supplierId, {
+    pollingInterval: 3_000,
+    skipPollingIfUnfocused: true,
+  });
+  const [start, starting] = useStartManualLoginMutation();
+  const [finish, finishing] = useFinishManualLoginMutation();
+  const [cancel, cancelling] = useCancelManualLoginMutation();
+  const attempt = status.data?.session;
+
+  if (!status.data?.enabled) return null;
+
+  const canStart = !attempt || !OPEN_STATES.has(attempt.state);
+  const failed = attempt?.state === "failed" || attempt?.state === "expired";
+  return (
+    <div className="mt-2 flex flex-col gap-3 border-t border-rule pt-4">
+      <div>
+        <h3 className="text-body font-semibold">Private browser</h3>
+        <p className="mt-1 text-small text-muted">
+          Use this only when the Supplier asks you to complete a CAPTCHA or login yourself.
+        </p>
+      </div>
+      {attempt?.state === "queued" ? <p role="status" className="text-small">Starting private browser…</p> : null}
+      {attempt?.state === "ready" ? (
+        <div className="flex flex-col gap-2">
+          <p role="status" className="text-small">
+            Browser ready. Make sure your SSH tunnel is open, log in and solve the CAPTCHA there,
+            then press Done before this session expires. Closing the browser window also counts as Done.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href={attempt.browser_url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-control min-w-touch items-center justify-center rounded-control bg-ink px-3 text-body font-medium text-surface hover:opacity-90 max-md:h-touch"
+            >
+              Open private browser
+            </a>
+            <Button
+              disabled={finishing.isLoading}
+              onClick={() => void finish(supplierId)}
+            >
+              Done, I'm logged in
+            </Button>
+            <Button
+              look="secondary"
+              disabled={cancelling.isLoading}
+              onClick={() => void cancel(supplierId)}
+            >
+              Cancel manual login
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {attempt && CHECKING_STATES.has(attempt.state) ? (
+        <p role="status" className="text-small">Checking your login…</p>
+      ) : null}
+      {attempt?.state === "succeeded" ? (
+        <FormMessage kind="ok">Manual login saved. Scheduled runs can reuse this session.</FormMessage>
+      ) : null}
+      {failed ? (
+        <FormMessage kind="error">
+          {attempt.error || (attempt.state === "expired" ? "The manual login expired." : "The manual login failed.")}
+        </FormMessage>
+      ) : null}
+      {starting.isError || finishing.isError || cancelling.isError || status.isError ? (
+        <FormMessage kind="error">Couldn't update the manual login. Try again.</FormMessage>
+      ) : null}
+      {canStart ? (
+        <div>
+          <Button
+            look="secondary"
+            disabled={starting.isLoading}
+            onClick={() => void start(supplierId)}
+          >
+            {attempt ? "Manual login again" : "Manual login"}
+          </Button>
+        </div>
+      ) : null}
+      {attempt && OPEN_STATES.has(attempt.state) && attempt.state !== "ready" &&
+        !CHECKING_STATES.has(attempt.state) ? (
+        <div>
+          <Button
+            look="text"
+            disabled={cancelling.isLoading}
+            onClick={() => void cancel(supplierId)}
+          >
+            Cancel manual login
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 /** Credentials (write-only), the Login button, the session's age and the pause/retry control. */
 export function LoginTab({ supplier }: { supplier: Supplier }) {
@@ -86,6 +187,7 @@ export function LoginTab({ supplier }: { supplier: Supplier }) {
             </Button>
           ) : null}
         </div>
+        <ManualLoginControl supplierId={supplier.id} />
       </div>
     </div>
   );

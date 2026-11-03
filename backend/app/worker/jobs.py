@@ -41,19 +41,25 @@ RETRY_AFTER_S = 300.0
 STALE_AFTER_S = 3600.0
 
 
-def run_once(deps: Deps) -> bool:
+def run_once(deps: Deps, handlers: dict[str, Handler] | None = None) -> bool:
     """Claim and run one due job. Returns False when there was none.
 
     A job that raises is put back for a later retry (and eventually marked
     failed); the worker itself never stops because of it.
     """
+    regular_worker = handlers is None
+    selected_handlers = HANDLERS if handlers is None else handlers
     with deps.session_factory() as session:
-        job = JobRepo(session).claim_next(deps.now())
+        job = JobRepo(session).claim_next(
+            deps.now(),
+            kinds=None if regular_worker else set(selected_handlers),
+            exclude_kinds={"manual_login"} if regular_worker else None,
+        )
     if job is None:
         return False
     with deps.session_factory() as session:
         try:
-            handler = HANDLERS.get(job.kind)
+            handler = selected_handlers.get(job.kind)
             if handler is None:
                 raise LookupError(f"no handler for job kind {job.kind!r}")
             handler(deps, session, job)

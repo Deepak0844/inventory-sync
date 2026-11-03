@@ -27,6 +27,16 @@ def test_claim_marks_the_job_running_and_carries_the_payload(db_session: Session
     assert (job.kind, job.payload, job.attempts) == ("login", {"why": "button"}, 0)
 
 
+def test_workers_only_claim_the_job_kinds_they_handle(db_session: Session) -> None:
+    jobs = JobRepo(db_session)
+    jobs.enqueue("check_supplier", None, {}, NOW, NOW)
+    jobs.enqueue("manual_login", None, {}, NOW, NOW)
+    manual = jobs.claim_next(NOW, kinds={"manual_login"})
+    regular = jobs.claim_next(NOW, kinds={"check_supplier"})
+    assert manual is not None and manual.kind == "manual_login"
+    assert regular is not None and regular.kind == "check_supplier"
+
+
 def test_two_sessions_never_claim_the_same_job(db_engine: Engine, db_session: Session) -> None:
     for _ in range(20):
         JobRepo(db_session).enqueue("check", None, {}, NOW, NOW)
@@ -80,3 +90,53 @@ def test_stale_running_job_is_requeued(db_session: Session) -> None:
     assert jobs.requeue_stale(later(120), older_than_s=60) == 1
     again = jobs.claim_next(later(120))
     assert again is not None and again.id == job_id
+
+
+def manual_job(jobs: JobRepo, state: str = "ready") -> int:
+    jobs.enqueue("manual_login", None, {"manual_state": state}, NOW, NOW)
+    job = jobs.claim_next(NOW, kinds={"manual_login"})
+    assert job is not None
+    return job.id
+
+
+def test_advance_moves_a_manual_job_only_from_an_expected_state(db_session: Session) -> None:
+    jobs = JobRepo(db_session)
+    job_id = manual_job(jobs)
+    assert jobs.advance(job_id, {"ready"}, "finishing") is True
+    status = jobs.status(job_id)
+    assert status is not None and status.payload["manual_state"] == "finishing"
+
+
+def test_advance_never_overwrites_a_state_someone_else_set(db_session: Session) -> None:
+    jobs = JobRepo(db_session)
+    job_id = manual_job(jobs)
+    jobs.set_result(job_id, "cancelled")  # the API got there first
+    assert jobs.advance(job_id, {"ready"}, "verifying") is False
+    status = jobs.status(job_id)
+    assert status is not None and status.payload["manual_state"] == "cancelled"
+    assert status.state == "done"
+
+
+def test_advance_to_an_end_state_completes_the_job_and_keeps_the_payload(
+    db_session: Session,
+) -> None:
+    jobs = JobRepo(db_session)
+    job_id = manual_job(jobs, state="verifying")
+    assert jobs.advance(job_id, {"verifying"}, "succeeded") is True
+    status = jobs.status(job_id)
+    assert status is not None and status.state == "done"
+    assert status.payload["manual_state"] == "succeeded"
+
+
+def test_abandon_running_ends_only_running_jobs_of_that_kind(db_session: Session) -> None:
+    jobs = JobRepo(db_session)
+    running = manual_job(jobs)
+    waiting = jobs.enqueue("manual_login", None, {"manual_state": "queued"}, later(60), NOW)
+    other = jobs.enqueue("check", None, {}, NOW, NOW)
+    jobs.claim_next(NOW, kinds={"check"})
+    assert jobs.abandon_running("manual_login", "gone") == 1
+    ended, still_queued, check = (jobs.status(i) for i in (running, waiting, other))
+    assert ended is not None and ended.state == "done"
+    assert ended.payload["manual_state"] == "failed" and ended.payload["error"] == "gone"
+    assert still_queued is not None and still_queued.state == "queued"
+    assert check is not None and check.state == "running"

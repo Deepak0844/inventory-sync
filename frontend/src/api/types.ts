@@ -33,6 +33,21 @@ export interface SupplierCredentials {
   has_password: boolean;
 }
 
+export interface ManualLogin {
+  id: number;
+  state:
+    | "queued" | "ready" | "finishing" | "verifying"
+    | "succeeded" | "failed" | "expired" | "cancelled";
+  expires_at: string;
+  browser_url: string;
+  error: string | null;
+}
+
+export interface ManualLoginStatus {
+  enabled: boolean;
+  session: ManualLogin | null;
+}
+
 export interface Run {
   id: number;
   kind: string;
