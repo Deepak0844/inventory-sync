@@ -130,6 +130,30 @@ it("fills the field that is waiting when a selector is picked", async () => {
   expect(screen.getByRole("button", { name: "Pick selector for Selector" })).toHaveAttribute("aria-pressed", "false");
 });
 
+it("fills the selected step's selector when a page element is clicked, without pressing Pick first", async () => {
+  serve();
+  const panel = ({ onPickSelector }: SelectorColumnProps) => (
+    <button onClick={() => onPickSelector("#picked")}>Choose #picked</button>
+  );
+  open(panel);
+  await screen.findByText("https://supplier-a.example/login");
+  fireEvent.click(screen.getByText("button[type=submit]"));
+  await screen.findByLabelText("Selector");
+  await userEvent.click(screen.getByRole("button", { name: "Choose #picked" }));
+  await waitFor(() => expect(screen.getByLabelText("Selector")).toHaveValue("#picked"));
+});
+
+it("says what to do when a clicked element has nowhere to go", async () => {
+  serve();
+  const panel = ({ onPickSelector }: SelectorColumnProps) => (
+    <button onClick={() => onPickSelector("#picked")}>Choose #picked</button>
+  );
+  open(panel);
+  await screen.findByText("https://supplier-a.example/login");
+  await userEvent.click(screen.getByRole("button", { name: "Choose #picked" }));
+  expect(await screen.findByText("Press Pick next to a field first, then click the element.")).toBeInTheDocument();
+});
+
 it("asks before leaving with unsaved changes", async () => {
   serve();
   open();
