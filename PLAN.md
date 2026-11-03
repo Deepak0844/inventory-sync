@@ -56,6 +56,11 @@ Each Supplier has an ordered list of 2FA methods. The default is **UI code first
 - Sessions are kept as long as possible by ticking "trust this device" in the flow. The dashboard shows each Supplier's session age.
 - An embedded or publicly streamed browser inside the dashboard is out of scope. An optional
   loopback-only noVNC browser can be reached through an SSH tunnel for manual CAPTCHA/login.
+- **Manual login** opens an ordinary Chromium, not one driven by Playwright, because a driven browser
+  is marked as automated and a CAPTCHA can reject a correct answer. You log in, then press **Done**
+  (closing the window counts too). The worker then reads the profile's cookies, checks the
+  logged-in marker headless, and saves only the Supplier's own cookies, encrypted. A failed check keeps
+  the saved session. See [ADR 0003](docs/adr/0003-manual-login-uses-a-plain-browser.md).
 
 ### Dashboard
 - Single admin login with 2FA. The data model leaves room for more users later.
