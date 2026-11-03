@@ -25,6 +25,16 @@ class JobRecord:
     attempts: int
 
 
+@dataclass(frozen=True)
+class JobStatus:
+    """The public state and progress payload of one queued job."""
+
+    id: int
+    state: str
+    payload: dict[str, Any]
+    last_error: str | None
+
+
 class JobRepo:
     """Queue operations on the `jobs` table."""
 
@@ -42,14 +52,17 @@ class JobRepo:
         self._s.commit()
         return job.id
 
-    def claim_next(self, now: datetime) -> JobRecord | None:
+    def claim_next(self, now: datetime, kinds: set[str] | None = None) -> JobRecord | None:
         """Claim the oldest due job, or return None.
 
         `FOR UPDATE SKIP LOCKED` lets many workers poll at once without ever
         receiving the same job.
         """
+        query = select(Job).where(Job.state == "queued", Job.run_after <= now)
+        if kinds is not None:
+            query = query.where(Job.kind.in_(kinds))
         job = self._s.execute(
-            select(Job).where(Job.state == "queued", Job.run_after <= now)
+            query
             .order_by(Job.run_after, Job.id).limit(1).with_for_update(skip_locked=True)
         ).scalar_one_or_none()
         if job is None:
@@ -59,6 +72,26 @@ class JobRepo:
         record = JobRecord(job.id, job.kind, job.supplier_id, dict(job.payload), job.attempts)
         self._s.commit()
         return record
+
+    def latest(self, kind: str, supplier_id: int) -> JobStatus | None:
+        """Return the newest job of this kind for a Supplier."""
+        job = self._s.scalar(
+            select(Job).where(Job.kind == kind, Job.supplier_id == supplier_id)
+            .order_by(Job.id.desc()).limit(1)
+        )
+        return None if job is None else JobStatus(
+            job.id, job.state, dict(job.payload), job.last_error
+        )
+
+    def set_result(self, job_id: int, state: str, **payload: Any) -> None:
+        """Update manual progress, completing terminal states."""
+        job = self._s.get(Job, job_id)
+        if job is None:
+            return
+        job.payload = {**dict(job.payload), "manual_state": state, **payload}
+        if state in {"succeeded", "failed", "expired", "cancelled"}:
+            job.state, job.locked_at = "done", None
+        self._s.commit()
 
     def complete(self, job_id: int) -> None:
         """Mark a job done."""

@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     encryption_key: SecretStr
     # Where Test run screenshots and snapshots are kept (see docs/api.md, Test runs).
     data_dir: Path = Path("data")
+    manual_browser_enabled: bool = False
+    manual_browser_url: str = "http://127.0.0.1:6080/vnc.html?autoconnect=true&resize=scale"
 
     @field_validator("encryption_key")
     @classmethod

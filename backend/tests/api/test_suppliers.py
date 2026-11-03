@@ -143,6 +143,41 @@ def test_login_check_and_retry_queue_work_for_the_worker(
     assert jobs(factory) == [("login", s["id"]), ("check_supplier", s["id"])]
 
 
+def test_manual_login_queues_one_session_and_can_cancel_it(
+    auth: TestClient, factory: sessionmaker[Session]
+) -> None:
+    from tests.fakes import sample_flow_dict
+
+    auth.app.state.manual_browser_enabled = True
+    auth.app.state.manual_browser_url = "http://127.0.0.1:6080/vnc.html"
+    s = add(auth)
+    assert auth.put(f"/api/suppliers/{s['id']}/flow", json=sample_flow_dict()).status_code == 200
+    url = f"/api/suppliers/{s['id']}/manual-login"
+    started = auth.post(url)
+    assert started.status_code == 201
+    assert started.json() == {
+        "id": 1,
+        "state": "queued",
+        "expires_at": "2026-11-03T12:10:00Z",
+        "browser_url": "http://127.0.0.1:6080/vnc.html",
+        "error": None,
+    }
+    assert auth.post(url).json()["id"] == 1
+    assert jobs(factory) == [("manual_login", s["id"])]
+    assert auth.delete(url).status_code == 204
+    assert auth.get(url).json()["state"] == "cancelled"
+
+
+def test_manual_login_needs_the_private_browser_and_a_complete_flow(auth: TestClient) -> None:
+    s = add(auth)
+    url = f"/api/suppliers/{s['id']}/manual-login"
+    assert auth.post(url).status_code == 503
+    auth.app.state.manual_browser_enabled = True
+    unavailable = auth.post(url)
+    assert unavailable.status_code == 409
+    assert "complete flow" in unavailable.text.lower()
+
+
 def test_a_second_click_still_answers_202_but_queues_nothing_more(
     auth: TestClient, factory: sessionmaker[Session]
 ) -> None:

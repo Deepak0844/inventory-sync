@@ -27,6 +27,16 @@ def test_claim_marks_the_job_running_and_carries_the_payload(db_session: Session
     assert (job.kind, job.payload, job.attempts) == ("login", {"why": "button"}, 0)
 
 
+def test_workers_only_claim_the_job_kinds_they_handle(db_session: Session) -> None:
+    jobs = JobRepo(db_session)
+    jobs.enqueue("check_supplier", None, {}, NOW, NOW)
+    jobs.enqueue("manual_login", None, {}, NOW, NOW)
+    manual = jobs.claim_next(NOW, kinds={"manual_login"})
+    regular = jobs.claim_next(NOW, kinds={"check_supplier"})
+    assert manual is not None and manual.kind == "manual_login"
+    assert regular is not None and regular.kind == "check_supplier"
+
+
 def test_two_sessions_never_claim_the_same_job(db_engine: Engine, db_session: Session) -> None:
     for _ in range(20):
         JobRepo(db_session).enqueue("check", None, {}, NOW, NOW)

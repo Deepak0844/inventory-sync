@@ -2,13 +2,14 @@
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from app.api.deps import Box, Db, Now, protected
 from app.api.schemas import (
     CredentialsIn,
     CredentialsOut,
     FlowJson,
+    ManualLoginOut,
     RunsOut,
     SupplierCreate,
     SupplierOut,
@@ -127,6 +128,57 @@ def _queue(kind: str, supplier_id: int, session: Db, box: Box, now: Now) -> Resp
 def login_now(supplier_id: int, session: Db, box: Box, now: Now) -> Response:
     """The Login button: queue a login run for the worker."""
     return _queue("login", supplier_id, session, box, now)
+
+
+def _manual_config(request: Request) -> str:
+    if not request.app.state.manual_browser_enabled:
+        raise HTTPException(status_code=503, detail="The private manual browser is not enabled")
+    return str(request.app.state.manual_browser_url)
+
+
+@router.post(
+    "/suppliers/{supplier_id}/manual-login",
+    response_model=ManualLoginOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def start_manual_login(
+    supplier_id: int, request: Request, session: Db, box: Box, now: Now
+) -> service.ManualLoginView:
+    """Open one private visible-browser login session."""
+    try:
+        return service.start_manual_login(
+            session, box, now, supplier_id, _manual_config(request)
+        )
+    except service.SupplierNotFound:
+        raise NOT_FOUND from None
+    except service.ManualLoginUnavailable as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@router.get("/suppliers/{supplier_id}/manual-login", response_model=ManualLoginOut | None)
+def get_manual_login(
+    supplier_id: int, request: Request, session: Db, box: Box
+) -> service.ManualLoginView | None:
+    """Read the current private-browser login status."""
+    try:
+        return service.get_manual_login(
+            session, box, supplier_id, _manual_config(request)
+        )
+    except service.SupplierNotFound:
+        raise NOT_FOUND from None
+
+
+@router.delete("/suppliers/{supplier_id}/manual-login", status_code=status.HTTP_204_NO_CONTENT)
+def cancel_manual_login(
+    supplier_id: int, request: Request, session: Db, box: Box
+) -> Response:
+    """Close the current private-browser login session."""
+    _manual_config(request)
+    try:
+        service.cancel_manual_login(session, box, supplier_id)
+    except service.SupplierNotFound:
+        raise NOT_FOUND from None
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/suppliers/{supplier_id}/check", status_code=status.HTTP_202_ACCEPTED)
