@@ -19,6 +19,12 @@ JSON over HTTP under `/api`, shared by the FastAPI backend and the RTK Query sli
 - `GET /api/login-code/pending` -> `[{supplier_id, supplier_name, expires_at}]`. The dashboard polls it every few seconds.
 - `POST /api/suppliers/{id}/login-code` `{code}` -> 202. 404 when that Supplier is unknown or has no open code prompt; 422 for a blank code.
 
+## Test runs (flow builder, screens 8 and 9)
+A Test run executes a flow in the worker's browser and reports each step. **It never writes to Shopify and never changes a Listing's Stock Status** (`wrote_to_shopify` is always `false`). Passwords and Login Codes are masked in every screenshot.
+- `POST /api/test-runs` `{supplier_id, flow?, mode: "login"|"extract", up_to_node_id?, listing_url?}` -> 202 `{id}`. `flow` is an unsaved draft (the saved flow when omitted) and is validated first (422 with the validator messages). `mode: "login"` runs the login nodes (it reuses the Supplier's saved session when valid; `up_to_node_id` stops after that node and returns a snapshot of the page there). `mode: "extract"` logs in if needed, opens `listing_url` and applies the extract rules. A login that needs a Login Code sets the state to `waiting_for_code` and uses the global "needs code" prompt.
+- `GET /api/test-runs/{id}` -> `{id, state: "queued"|"running"|"waiting_for_code"|"done"|"failed", mode, steps: [{node_id, type, ok, error, screenshot_url, at}], snapshot: {screenshot_url, html_url} | null, reading: {result, error_kind, quantity, matched_rule} | null, login_result, error, wrote_to_shopify: false}`. Polled while `queued`, `running` or `waiting_for_code`.
+- `GET /api/test-runs/{id}/files/{name}` serves a screenshot (PNG) or the snapshot HTML. `html_url` returns a cleaned copy of the page for the selector picker: scripts, event handlers, iframes and external resources removed, and password and code field values blanked.
+
 ## Listings, mappings, variants (screens 4, 5)
 - `GET /api/listings?supplier_id=&q=&status=&cursor=&limit=` -> `{items: [{id, supplier_id, url, selection_hint, status, quantity, removed, last_success_at}], total, next_cursor}`.
 - `POST /api/listings/import` multipart `file` (CSV with header `sku,supplier,url[,selection_hint]`, `supplier` is the Supplier name) -> `{created, updated, errors: [{row, message}]}`. Valid rows are applied even when others fail.
