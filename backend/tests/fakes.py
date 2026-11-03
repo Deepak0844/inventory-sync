@@ -1,6 +1,6 @@
 """Hand-written fakes for the interfaces the app passes in (no patching)."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from app.flows.definition import FlowDefinition
@@ -79,6 +79,7 @@ class ScriptedPage:
         self.filled: dict[str, str] = {}
         self.clicked: list[str] = []
         self.on_click: dict[str, Callable[[], None]] = {}
+        self.screenshots: list[list[str]] = []
 
     def goto(self, url: str) -> PageResponse | None:
         self.visited.append(url)
@@ -101,6 +102,10 @@ class ScriptedPage:
     def content(self) -> str:
         return self.html
 
+    def screenshot(self, mask_selectors: Sequence[str]) -> bytes:
+        self.screenshots.append(list(mask_selectors))
+        return b"png"
+
 
 class BrokenPage(ScriptedPage):
     """A page where every browser operation fails, like a timeout."""
@@ -121,6 +126,9 @@ class BrokenPage(ScriptedPage):
         raise PageError("timeout")
 
     def content(self) -> str:
+        raise PageError("timeout")
+
+    def screenshot(self, mask_selectors: Sequence[str]) -> bytes:
         raise PageError("timeout")
 
 

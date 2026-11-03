@@ -195,7 +195,7 @@ def test_the_login_button_job_logs_in_and_saves_the_session(make_world: Callable
 
 def test_every_job_kind_has_a_handler() -> None:
     assert set(HANDLERS) == {"check_supplier", "login", "apply_approval", "sync_variants",
-                             "poll_orders", "daily_summary"}
+                             "poll_orders", "daily_summary", "test_run"}
 
 
 def test_run_once_returns_false_when_the_queue_is_empty(make_world: Callable[..., World]) -> None:

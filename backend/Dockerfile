@@ -9,6 +9,6 @@ RUN playwright install --with-deps chromium
 COPY app ./app
 COPY alembic.ini ./
 COPY alembic ./alembic
-RUN useradd --system --no-create-home app
+RUN useradd --system --no-create-home app && mkdir /srv/data && chown app /srv/data
 USER app
 CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000"]

@@ -6,17 +6,26 @@ Knows nothing about individual node types; each node does its own work behind
 
 import re
 from collections.abc import Callable, Sequence
+from typing import Protocol
 from urllib.parse import urlparse
 
 from app.core.clock import Clock
 from app.core.encryption import DecryptionError
 from app.flows.definition import FlowDefinition
 from app.flows.login_codes import CodeSource
-from app.flows.nodes import FlowContext, FlowFailure
+from app.flows.nodes import FlowContext, FlowFailure, FlowNode
 from app.flows.page import BrowserSession, Page, PageError
 from app.flows.results import Credentials, LoginResult, Reading, ReadingResult
 from app.flows.session_store import EncryptedSessionStore
 from app.mail.codes import MailMessage
+
+
+class StepObserver(Protocol):
+    """Told after each node, for Test runs that show every step."""
+
+    def after_node(self, node: FlowNode, error: str | None) -> None:
+        """Called once per node with None on success, or a message that holds no secrets."""
+        ...
 
 
 def run_login(
@@ -28,16 +37,24 @@ def run_login(
     fetch_mail: Callable[[], Sequence[MailMessage]] | None,
     clock: Clock,
     poll: float,
+    *,
+    observer: StepObserver | None = None,
+    stop_after: str | None = None,
+    use_saved_session: bool = True,
 ) -> LoginResult:
     """Make the session logged in, running the login nodes only if the saved session is gone.
 
     Never raises for a browser or flow problem; the result says what happened.
+    The keyword arguments are for Test runs: `observer` hears about each node,
+    `stop_after` ends the walk after that node id (the result is then LOGGED_IN
+    only in the sense that no node failed), and `use_saved_session=False` runs
+    the nodes even when a saved session still works.
     """
     ctx = FlowContext(session, store, credentials, pasted_codes, fetch_mail, clock, poll)
     try:
-        if _saved_session_works(flow, ctx):
+        if use_saved_session and _saved_session_works(flow, ctx):
             return LoginResult.SESSION_REUSED
-        _walk(flow, ctx)
+        _walk(flow, ctx, observer, stop_after)
     except FlowFailure as failure:
         return failure.result
     except PageError:
@@ -68,12 +85,29 @@ def _saved_session_works(flow: FlowDefinition, ctx: FlowContext) -> bool:
     return False
 
 
-def _walk(flow: FlowDefinition, ctx: FlowContext) -> None:
+def _step(flow: FlowDefinition, ctx: FlowContext, node: FlowNode) -> str | None:
+    label = node.run(ctx)
+    if flow.blocked_if.contains.lower() in ctx.session.page.content().lower():
+        raise FlowFailure(LoginResult.BLOCKED, "blocked page")
+    return label
+
+
+def _walk(
+    flow: FlowDefinition, ctx: FlowContext, observer: StepObserver | None,
+    stop_after: str | None,
+) -> None:
     node = flow.start
     while True:
-        label = node.run(ctx)
-        if flow.blocked_if.contains.lower() in ctx.session.page.content().lower():
-            raise FlowFailure(LoginResult.BLOCKED)
+        try:
+            label = _step(flow, ctx, node)
+        except (FlowFailure, PageError) as exc:
+            if observer is not None:
+                observer.after_node(node, str(exc))
+            raise
+        if observer is not None:
+            observer.after_node(node, None)
+        if node.id == stop_after:
+            return
         following = flow.next_node(node.id, label)
         if following is None:
             return
@@ -105,9 +139,10 @@ def _read(flow: FlowDefinition, page: Page, listing_url: str) -> Reading:
     text = page.inner_text(rules.stock_selector).strip().lower()
     # Out-of-stock wording is checked first because it can contain in-stock wording.
     if rules.out_of_stock_if.contains.lower() in text:
-        return Reading(ReadingResult.OUT_OF_STOCK)
+        return Reading(ReadingResult.OUT_OF_STOCK, matched_rule="out_of_stock_if")
     if rules.in_stock_if.contains.lower() in text:
-        return Reading(ReadingResult.IN_STOCK, quantity=_quantity(flow, page))
+        return Reading(ReadingResult.IN_STOCK, quantity=_quantity(flow, page),
+                       matched_rule="in_stock_if")
     return Reading(ReadingResult.UNKNOWN, "no_rule_matched")
 
 

@@ -4,6 +4,7 @@ Not responsible for building the database engine or the encryption box.
 """
 
 from functools import lru_cache
+from pathlib import Path
 
 from cryptography.fernet import Fernet
 from pydantic import SecretStr, field_validator
@@ -19,6 +20,8 @@ class Settings(BaseSettings):
     database_url: SecretStr
     # SecretStr keeps the key out of reprs and logs.
     encryption_key: SecretStr
+    # Where Test run screenshots and snapshots are kept (see docs/api.md, Test runs).
+    data_dir: Path = Path("data")
 
     @field_validator("encryption_key")
     @classmethod

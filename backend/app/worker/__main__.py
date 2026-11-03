@@ -28,6 +28,7 @@ def main() -> None:
         browser=chromium,
         shopify=RealShopifyFactory(clock),
         mail=imap_fetch,
+        data_dir=settings.data_dir,
     )
     stop = threading.Event()
     for signum in (signal.SIGTERM, signal.SIGINT):

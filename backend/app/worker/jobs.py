@@ -21,6 +21,7 @@ from app.worker.login import handle_login
 from app.worker.orders import handle_poll_orders
 from app.worker.summary import handle_daily_summary
 from app.worker.sync import handle_sync_variants
+from app.worker.test_run import handle_test_run
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ HANDLERS: dict[str, Handler] = {
     "sync_variants": handle_sync_variants,
     "poll_orders": handle_poll_orders,
     "daily_summary": handle_daily_summary,
+    "test_run": handle_test_run,
 }
 MAX_ATTEMPTS = 3
 RETRY_AFTER_S = 300.0
