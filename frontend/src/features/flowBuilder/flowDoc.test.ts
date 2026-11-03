@@ -29,6 +29,12 @@ describe("starterFlow", () => {
     expect(Object.values(v.nodes).flat().every((m) => /selector/i.test(m))).toBe(true);
   });
 
+  it("starts with a block phrase that a normal page does not show", () => {
+    // The bare word "CAPTCHA" also appears on ordinary login pages (for example "protected by
+    // hCaptcha"), which made every run look blocked.
+    expect(flow.blocked_if.contains.toLowerCase()).not.toContain("captcha");
+  });
+
   it("does not double the slash when the site address ends with one", () => {
     expect(starterFlow({ name: "A", site_url: "https://a.example/" }).nodes[0]).toMatchObject({ url: "https://a.example/login" });
   });

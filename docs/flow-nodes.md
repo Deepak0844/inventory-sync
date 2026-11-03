@@ -4,7 +4,7 @@ A Supplier's flow is JSON (see PLAN.md section 11). `nodes` run in the order the
 
 Templates are only supported in `fill` (not in `goto`, `click` and so on). In a `fill` value you can use `{{credentials.username}}`, `{{credentials.password}}` and `{{code}}`. Any other name is rejected on load.
 
-After every node the runner checks the page for the `blocked_if` text (for example a CAPTCHA) and stops with Blocked.
+After every node the runner checks the page's **visible text** for the `blocked_if` phrase and stops with Blocked. Pick a phrase only a real block page shows, such as `verify you are human` or `access denied`. Words in a page's scripts do not count, and a bare `captcha` is a poor choice because ordinary pages say "protected by reCAPTCHA".
 
 ## goto
 Open a URL.

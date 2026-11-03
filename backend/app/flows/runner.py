@@ -86,9 +86,16 @@ def _saved_session_works(flow: FlowDefinition, ctx: FlowContext) -> bool:
     return False
 
 
+def _is_blocked(flow: FlowDefinition, page: Page) -> bool:
+    """Whether the page SHOWS the blocked text. Only visible text counts: ordinary pages carry
+    words like "captcha" in their scripts (a Shopify login page has it 78 times), and reading
+    the raw HTML made every such page look blocked."""
+    return flow.blocked_if.contains.lower() in page.inner_text("body").lower()
+
+
 def _step(flow: FlowDefinition, ctx: FlowContext, node: FlowNode) -> str | None:
     label = node.run(ctx)
-    if flow.blocked_if.contains.lower() in ctx.session.page.content().lower():
+    if _is_blocked(flow, ctx.session.page):
         raise FlowFailure(LoginResult.BLOCKED, "blocked page")
     return label
 
@@ -135,7 +142,7 @@ def _read(flow: FlowDefinition, page: Page, listing_url: str) -> Reading:
     response = page.goto(listing_url)
     if response is not None and response.status == 404:
         return Reading(ReadingResult.LISTING_REMOVED)
-    if flow.blocked_if.contains.lower() in page.content().lower():
+    if _is_blocked(flow, page):
         return Reading(ReadingResult.UNKNOWN, "blocked")
     if urlparse(page.url).path.startswith(flow.login_path):
         return Reading(ReadingResult.UNKNOWN, "session_lost")

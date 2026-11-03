@@ -287,3 +287,26 @@ def test_cookies_of_an_expired_session_are_cleared_before_the_fresh_login() -> N
     session = FakeBrowserSession(s.page)
     run_login(s.flow, session, s.store, CREDS, s.pasted, None, FakeClock(), poll=1.0)
     assert session.cleared == 1
+
+
+def test_words_in_scripts_do_not_make_a_page_blocked() -> None:
+    # A normal Shopify login page: "captcha" appears in its scripts, not on screen.
+    page = two_factor_page()
+    page.html = "<script>const y='captcha'</script>"
+    page.texts["body"] = "Log in to your account"
+    s = setup(page)
+    s.pasted.submit("123456")
+    assert s.login() is LoginResult.LOGGED_IN
+
+
+def test_words_in_scripts_do_not_make_a_listing_blocked() -> None:
+    page = stock_page("In stock")
+    page.html = "<script>const y='captcha'</script>"
+    page.texts["body"] = "In stock"
+    assert read(page).result is ReadingResult.IN_STOCK
+
+
+def test_a_visible_block_message_still_blocks_a_listing() -> None:
+    page = stock_page("In stock")
+    page.texts["body"] = "Please complete the CAPTCHA to continue"
+    assert read(page).error_kind == "blocked"

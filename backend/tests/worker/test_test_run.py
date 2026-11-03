@@ -385,3 +385,16 @@ def test_a_snapshot_before_any_login_step_runs_without_credentials(
     run = start(w, tmp_path, up_to_node_id="n1")
     assert run.state == "done" and run.login_result == "stopped_after_node"
     assert run.snapshot is not None
+
+
+def test_a_step_with_no_selector_yet_does_not_break_the_screenshots() -> None:
+    # The starting outline has blank selectors on its Fill steps; a blank mask makes
+    # Playwright refuse the screenshot, which used to drop the whole snapshot.
+    from app.flows.definition import FlowDefinition
+    from app.worker.test_run import masked_selectors
+    from tests.fakes import sample_flow_dict
+
+    data = sample_flow_dict()
+    data["nodes"][2]["selector"] = ""
+    masks = masked_selectors(FlowDefinition.model_validate(data))
+    assert "" not in masks and "input[type=password]" in masks and "#otp" in masks
