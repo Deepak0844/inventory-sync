@@ -35,29 +35,49 @@ class ListingState:
     status: StockStatus = StockStatus.UNKNOWN
     removed: bool = False
     last_success_at: float | None = None
+    quantity: int | None = None
     streak_kind: StockStatus | None = None
     streak_count: int = 0
     streak_last_at: float = 0.0
 
 
 def apply_reading(
-    state: ListingState, result: ReadingResult, now: float, rules: ReadingRules
+    state: ListingState,
+    result: ReadingResult,
+    now: float,
+    rules: ReadingRules,
+    quantity: int | None = None,
 ) -> ListingState:
-    """Return the new state after one reading taken at `now` (epoch seconds).
+    """Return the new state after one reading.
+
+    Args:
+        state: The Listing's state before this reading.
+        result: What the check found.
+        now: When the reading was taken, in epoch seconds.
+        rules: The Supplier's confirmation rules.
+        quantity: The Supplier's quantity, if the page showed one.
 
     An Unknown reading changes nothing, including a pending confirmation: it
     says nothing about stock, so it can neither confirm nor cancel one. A
     reading that disagrees with the current status only counts toward
     confirmation if it is at least `confirm_gap_s` after the previous counted
     one, so a quick re-run cannot confirm Out of Stock by itself.
+
+    A removed page is a successful check: it moves `last_success_at` and sets
+    `removed` (the review flag) at once. With `removed_as_unknown` it leaves the
+    status alone, otherwise it counts as Out of Stock after confirmation.
     """
+    if result is ReadingResult.UNKNOWN:
+        return state
+    removed = result is ReadingResult.LISTING_REMOVED
+    state = replace(state, last_success_at=now, removed=removed)
     kind = _kind(result, rules)
     if kind is None:
         return state
-    state = replace(state, last_success_at=now)
-    removed = result is ReadingResult.LISTING_REMOVED
+    if kind is StockStatus.IN_STOCK:
+        state = replace(state, quantity=quantity)
     if kind is state.status:
-        return replace(state, removed=removed, streak_kind=None, streak_count=0)
+        return replace(state, streak_kind=None, streak_count=0)
 
     if state.streak_kind is kind:
         if now - state.streak_last_at < rules.confirm_gap_s:
@@ -67,7 +87,8 @@ def apply_reading(
         count = 1
     needed = rules.out_confirm_reads if kind is StockStatus.OUT_OF_STOCK else rules.in_confirm_reads
     if count >= needed:
-        return replace(state, status=kind, removed=removed, streak_kind=None, streak_count=0)
+        cleared = None if kind is StockStatus.OUT_OF_STOCK else state.quantity
+        return replace(state, status=kind, quantity=cleared, streak_kind=None, streak_count=0)
     return replace(state, streak_kind=kind, streak_count=count, streak_last_at=now)
 
 

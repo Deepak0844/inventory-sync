@@ -1,6 +1,9 @@
+import pytest
+
 from app.engine.listing import StockStatus
 from app.engine.variant import (
     Action,
+    InvalidMaxQuantity,
     ListingView,
     Reason,
     VariantState,
@@ -89,3 +92,23 @@ def test_default_quantity_is_also_capped() -> None:
 
 def test_zero_quantity_from_an_in_stock_listing_is_not_written_as_available() -> None:
     assert decide([view(IN, quantity=0)])[1] == 100
+
+
+@pytest.mark.parametrize("bad", [0, -1])
+def test_a_max_quantity_below_one_is_rejected(bad: int) -> None:
+    with pytest.raises(InvalidMaxQuantity):
+        quantity_to_write(5, max_quantity=bad)
+
+
+def test_backup_listing_in_stock_keeps_the_variant_available_when_primary_is_out() -> None:
+    listings = [view(OUT, priority=1), view(IN, priority=2, quantity=3)]
+    assert decide(listings, VariantState.SOLD_OUT) == (Action.SET_AVAILABLE, 3, Reason.RESTORE)
+
+
+def test_backup_listing_in_stock_wins_over_an_unknown_primary() -> None:
+    listings = [view(UNK, priority=1), view(IN, priority=2)]
+    assert decide(listings)[0] is Action.SET_AVAILABLE
+
+
+def test_in_stock_variant_is_rewritten_every_check_so_order_counting_never_blocks_sales() -> None:
+    assert decide([view(IN, quantity=100)], VariantState.AVAILABLE)[2] is Reason.REFRESH

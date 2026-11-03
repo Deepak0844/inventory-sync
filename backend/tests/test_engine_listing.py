@@ -95,7 +95,12 @@ def test_listing_removed_can_be_treated_as_unknown_for_a_supplier() -> None:
                          removed_as_unknown=True)
     state = feed((IN, 0), (GONE, 100), (GONE, 1900), rules=rules)
     assert state.status is StockStatus.IN_STOCK
-    assert not state.removed
+    assert state.removed  # still flagged for review, only the status is left alone
+
+
+def test_removed_page_is_a_successful_check_even_when_treated_as_unknown() -> None:
+    rules = ReadingRules(removed_as_unknown=True)
+    assert feed((IN, 0), (GONE, 500), rules=rules).last_success_at == 500
 
 
 def test_removed_flag_clears_when_the_listing_is_in_stock_again() -> None:
@@ -108,3 +113,21 @@ def test_last_success_time_moves_on_every_known_reading_but_not_on_unknown() -> 
     state = feed((IN, 10), (UNK, 20))
     assert state.last_success_at == 10
     assert feed((OUT, 30), state=state).last_success_at == 30
+
+
+def test_quantity_follows_the_latest_in_stock_reading() -> None:
+    state = apply_reading(START, IN, 0, RULES, quantity=7)
+    assert state.quantity == 7
+    assert apply_reading(state, IN, 10, RULES, quantity=5).quantity == 5
+
+
+def test_quantity_is_cleared_when_out_of_stock_is_confirmed() -> None:
+    state = apply_reading(START, IN, 0, RULES, quantity=7)
+    state = feed((OUT, 100), (OUT, 1900), state=state)
+    assert state.status is StockStatus.OUT_OF_STOCK
+    assert state.quantity is None
+
+
+def test_quantity_survives_an_unconfirmed_out_of_stock_reading() -> None:
+    state = apply_reading(START, IN, 0, RULES, quantity=7)
+    assert feed((OUT, 100), state=state).quantity == 7
