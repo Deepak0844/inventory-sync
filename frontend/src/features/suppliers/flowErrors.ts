@@ -5,9 +5,13 @@ export function flowErrors(error: unknown): string[] {
   const detail = (error as { data?: { detail?: unknown } } | undefined)?.data?.detail;
   if (typeof detail === "string") return [detail];
   if (Array.isArray(detail) && detail.length > 0) {
-    return detail.map((entry: { loc?: unknown[]; msg?: string }) => {
-      const where = (entry.loc ?? []).filter((part) => part !== "body").join(".");
-      return where ? `${where}: ${entry.msg}` : String(entry.msg);
+    // The flow and Test run routes send plain strings; FastAPI's own validation sends {loc, msg}.
+    return detail.map((entry: unknown) => {
+      if (typeof entry === "string") return entry;
+      const { loc, msg } = (entry ?? {}) as { loc?: unknown[]; msg?: unknown };
+      if (typeof msg !== "string") return FALLBACK;
+      const where = (loc ?? []).filter((part) => part !== "body").join(".");
+      return where ? `${where}: ${msg}` : msg;
     });
   }
   return [FALLBACK];
