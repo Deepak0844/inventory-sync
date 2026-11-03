@@ -27,6 +27,14 @@ class RunRequestInvalid(Exception):
         self.messages = messages
 
 
+class RunInProgress(Exception):
+    """The Supplier already has a Test run in progress. `run_id` is that run."""
+
+    def __init__(self, run_id: int) -> None:
+        super().__init__(f"test run {run_id} is already in progress")
+        self.run_id = run_id
+
+
 class RunNotFound(Exception):
     """No such Test run, or no such file in it."""
 
@@ -35,7 +43,7 @@ def start_test_run(
     session: Session, box: SecretBox, now: datetime, supplier_id: int, mode: str,
     flow: dict[str, Any] | None, up_to_node_id: str | None, listing_url: str | None,
 ) -> int:
-    """Queue a Test run and return its id, or return the Supplier's open run instead.
+    """Queue a Test run and return its id.
 
     Args:
         supplier_id: The Supplier to test.
@@ -47,15 +55,15 @@ def start_test_run(
     Raises:
         SupplierNotFound: for an unknown id.
         RunRequestInvalid: for a bad draft, an unknown node, no flow, no credentials, or no
-            Listing URL in extract mode. Nothing is queued.
+            Listing URL in extract mode. Nothing is queued. Checked before anything else, so a
+            bad request is never answered with "already in progress".
+        RunInProgress: if the Supplier has a run that is still open (and under 30 minutes
+            old). The new request is not queued; the owner must wait or let it finish.
     """
     suppliers = SupplierRepo(session, box)
     if suppliers.get(supplier_id) is None:
         raise SupplierNotFound(supplier_id)
     runs = FlowTestRunRepo(session)
-    open_run = runs.open_for_supplier(supplier_id)
-    if open_run is not None:
-        return open_run.id
     problems: list[str] = []
     if suppliers.get_credentials(supplier_id) is None:
         problems.append("Add the Supplier's credentials before a Test run.")
@@ -68,6 +76,9 @@ def start_test_run(
         problems += _flow_problems(raw, up_to_node_id)
     if problems:
         raise RunRequestInvalid(problems)
+    open_run = runs.open_for_supplier(supplier_id, now)
+    if open_run is not None:
+        raise RunInProgress(open_run.id)
     request = {"supplier_id": supplier_id, "mode": mode, "flow": flow,
                "up_to_node_id": up_to_node_id, "listing_url": listing_url}
     run_id = runs.create(supplier_id, mode, request, now)

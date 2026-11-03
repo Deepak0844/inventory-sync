@@ -83,3 +83,30 @@ def test_page_title_does_not_leak_into_the_body() -> None:
     page = "<html><head><title>Secret title</title></head><body><p>x</p></body></html>"
     out = clean_snapshot_html(page)
     assert "Secret title" not in out
+
+
+def test_only_test_id_data_attributes_survive() -> None:
+    html = clean_snapshot_html(
+        '<div data-testid="cart" data-test="a" data-cy="b" data-csrf-token="abc123" '
+        'data-user-email="me@example.com" data-api-key="k-999" id="x">Hi</div>')
+    assert 'data-testid="cart"' in html and 'data-test="a"' in html and 'data-cy="b"' in html
+    assert "abc123" not in html and "me@example.com" not in html and "k-999" not in html
+    assert 'id="x"' in html
+
+
+def test_hidden_inputs_are_removed_entirely() -> None:
+    html = clean_snapshot_html(
+        '<form><input type="hidden" name="csrf" value="tok-77"><input name="q"></form>')
+    assert "csrf" not in html and "tok-77" not in html
+    assert 'name="q"' in html
+
+
+def test_textarea_content_and_the_tag_are_removed() -> None:
+    html = clean_snapshot_html('<p>keep</p><textarea id="t">secret-token-9</textarea>')
+    assert "secret-token-9" not in html and "<textarea" not in html and "keep" in html
+
+
+def test_meta_and_noscript_text_are_removed() -> None:
+    html = clean_snapshot_html(
+        '<meta name="csrf-token" content="meta-tok-5"><noscript>tracker-id-8</noscript><p>x</p>')
+    assert "meta-tok-5" not in html and "tracker-id-8" not in html

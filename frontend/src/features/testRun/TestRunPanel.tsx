@@ -17,7 +17,7 @@ interface Props {
 
 /** The Test run controls and the result of the latest run. It never writes to Shopify, and says so. */
 export function TestRunPanel({ controller, selectedNodeId }: Props) {
-  const { run, busy, startErrors, pollError, start, retry } = controller;
+  const { run, busy, startErrors, inProgressRunId, pollError, start, retry, showInProgress } = controller;
   const [address, setAddress] = useState("");
   const listingUrl = address.trim();
   const addressOk = FULL_ADDRESS.test(listingUrl);
@@ -62,11 +62,18 @@ export function TestRunPanel({ controller, selectedNodeId }: Props) {
         ) : null}
 
         {startErrors.length > 0 ? (
-          <ul role="alert" className="flex flex-col gap-1 text-body text-negative">
-            {startErrors.map((message) => (
-              <li key={message}>{message}</li>
-            ))}
-          </ul>
+          <div className="flex flex-col items-start gap-2">
+            <ul role="alert" className="flex flex-col gap-1 text-body text-negative">
+              {startErrors.map((message) => (
+                <li key={message}>{message}</li>
+              ))}
+            </ul>
+            {inProgressRunId !== null ? (
+              <Button look="secondary" onClick={showInProgress}>
+                Show that run
+              </Button>
+            ) : null}
+          </div>
         ) : null}
 
         {pollError ? (

@@ -110,13 +110,35 @@ def test_an_unknown_mode_is_rejected(auth: TestClient) -> None:
     assert post(auth, supplier(auth), mode="write-to-shopify").status_code == 422
 
 
-def test_a_second_start_while_one_is_open_reuses_it(
+def test_a_second_start_while_one_is_open_is_refused_with_the_open_runs_id(
     auth: TestClient, factory: sessionmaker[Session]
 ) -> None:
     sid = supplier(auth)
     first = post(auth, sid).json()["id"]
-    assert post(auth, sid).json()["id"] == first
+    again = post(auth, sid, up_to_node_id="n4")
+    assert again.status_code == 409
+    assert again.json() == {"detail": "A test run is already in progress for this Supplier.",
+                            "run_id": first}
     assert len(jobs(factory)) == 1
+
+
+def test_a_bad_draft_is_a_422_even_while_a_run_is_open(auth: TestClient) -> None:
+    sid = supplier(auth)
+    assert post(auth, sid).status_code == 202
+    assert post(auth, sid, flow={"supplier": ""}).status_code == 422
+
+
+def test_a_run_stuck_open_for_over_30_minutes_does_not_block_a_new_one(
+    auth: TestClient, factory: sessionmaker[Session]
+) -> None:
+    sid = supplier(auth)
+    first = post(auth, sid).json()["id"]
+    with factory() as session:
+        session.execute(
+            text("UPDATE test_runs SET created_at = created_at - interval '31 minutes'"))
+        session.commit()
+    second = post(auth, sid)
+    assert second.status_code == 202 and second.json()["id"] != first
 
 
 def test_after_a_run_finishes_a_new_one_can_start(

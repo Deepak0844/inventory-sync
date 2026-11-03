@@ -47,7 +47,8 @@ def run_login(
     Never raises for a browser or flow problem; the result says what happened.
     The keyword arguments are for Test runs: `observer` hears about each node,
     `stop_after` ends the walk after that node id (the result is then LOGGED_IN
-    only in the sense that no node failed), and `use_saved_session=False` runs
+    only in the sense that no node failed; FLOW_FAILURE if the path taken never
+    reaches that node, for example the other side of a branch), and `use_saved_session=False` runs
     the nodes even when a saved session still works.
     """
     ctx = FlowContext(session, store, credentials, pasted_codes, fetch_mail, clock, poll)
@@ -110,6 +111,10 @@ def _walk(
             return
         following = flow.next_node(node.id, label)
         if following is None:
+            if stop_after is not None:
+                # The walk ended on a path that never touched the node: say so rather than
+                # let a Test run show the end of the flow as if it were that step.
+                raise FlowFailure(LoginResult.FLOW_FAILURE, f"{stop_after} was not reached")
             return
         node = following
 

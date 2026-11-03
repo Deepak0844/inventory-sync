@@ -22,8 +22,12 @@ export interface TestRunController {
   snapshot: { runId: number; snapshot: TestRunSnapshot } | null;
   busy: boolean;
   startErrors: string[];
+  /** Set when a start was refused because another run is going: the id of that run. */
+  inProgressRunId: number | null;
   pollError: boolean;
   start: (options: StartOptions) => void;
+  /** Show and follow the run that is already in progress. */
+  showInProgress: () => void;
   retry: () => void;
 }
 
@@ -31,11 +35,13 @@ export interface TestRunController {
  * Starts Test runs and follows the latest one by polling until it finishes. Test runs never write to
  * Shopify. If two starts overlap, only the later one is shown: an earlier answer arriving late is
  * ignored, and the poll result is read per run id, so an old run can never replace a newer one.
+ * A start that fails clears the run on screen, so old results never sit beside the error.
  */
 export function useTestRun(supplierId: number, getDraftFlow: () => FlowDefinition, pollMs = POLL_MS): TestRunController {
   const [startRun, { isLoading: starting }] = useStartTestRunMutation();
   const [runId, setRunId] = useState<number | null>(null);
   const [failedStart, setFailedStart] = useState<unknown>(null);
+  const [inProgressRunId, setInProgressRunId] = useState<number | null>(null);
   const [finishedId, setFinishedId] = useState<number | null>(null);
   const [kept, setKept] = useState<TestRunController["snapshot"]>(null);
   const latestStart = useRef(0);
@@ -54,6 +60,7 @@ export function useTestRun(supplierId: number, getDraftFlow: () => FlowDefinitio
   const start = ({ mode, upToNodeId, listingUrl }: StartOptions) => {
     const mine = ++latestStart.current;
     setFailedStart(null);
+    setInProgressRunId(null);
     const body: NewTestRun = {
       supplier_id: supplierId,
       flow: getDraftFlow(),
@@ -68,7 +75,10 @@ export function useTestRun(supplierId: number, getDraftFlow: () => FlowDefinitio
           if (mine === latestStart.current) setRunId(id);
         },
         (error: unknown) => {
-          if (mine === latestStart.current) setFailedStart(error);
+          if (mine !== latestStart.current) return;
+          setRunId(null);
+          setFailedStart(error);
+          setInProgressRunId(conflictingRunId(error));
         },
       );
   };
@@ -79,10 +89,24 @@ export function useTestRun(supplierId: number, getDraftFlow: () => FlowDefinitio
     snapshot: kept,
     busy: starting || (run !== undefined && ACTIVE.has(run.state)) || waitingForFirstRead,
     startErrors: failedStart === null ? [] : startErrorMessages(failedStart),
+    inProgressRunId,
     pollError,
     start,
+    showInProgress: () => {
+      if (inProgressRunId === null) return;
+      latestStart.current += 1; // a start still in flight must not replace the run we are about to show
+      setFailedStart(null);
+      setRunId(inProgressRunId);
+      setInProgressRunId(null);
+    },
     retry: () => {
       if (runId !== null) void refetch();
     },
   };
+}
+
+/** The id of the run that caused a 409 ("already in progress"), or null for any other failure. */
+function conflictingRunId(error: unknown): number | null {
+  const { status, data } = (error ?? {}) as { status?: unknown; data?: { run_id?: unknown } };
+  return status === 409 && typeof data?.run_id === "number" ? data.run_id : null;
 }

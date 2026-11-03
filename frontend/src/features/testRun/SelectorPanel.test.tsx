@@ -221,3 +221,21 @@ it("hands avoidText on to the picker", async () => {
   fireEvent.click(doc.querySelector("p") as Element);
   expect(onPickSelector).toHaveBeenCalledWith("p.stock-status");
 });
+
+describe("a test run is already in progress", () => {
+  it("says so and lets you show that run", async () => {
+    serveRuns({ 7: aRun({ id: 7, state: "running" }) });
+    server.use(
+      http.post(`${base}/test-runs`, () =>
+        HttpResponse.json({ detail: "A test run is already in progress for this Supplier.", run_id: 7 }, { status: 409 }),
+      ),
+    );
+    panel();
+    await click("Run login test");
+    expect(await screen.findByText("A test run is already in progress for this Supplier.")).toBeInTheDocument();
+    await click("Show that run");
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Show that run" })).not.toBeInTheDocument());
+    expect(screen.queryByText("A test run is already in progress for this Supplier.")).not.toBeInTheDocument();
+    expect(await screen.findByText("Running")).toBeInTheDocument();
+  });
+});

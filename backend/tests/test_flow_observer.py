@@ -117,3 +117,31 @@ def test_scripted_page_screenshot_records_the_masks() -> None:
     page = ScriptedPage()
     assert page.screenshot(["#password"]) == b"png"
     assert page.screenshots == [["#password"]]
+
+
+def with_branch(d: dict[str, Any]) -> None:
+    """n1 -> branch; yes -> banner click -> n2, no -> n2 (so 'dismiss' is only on one side)."""
+    d["nodes"].insert(1, {"id": "b", "type": "branch", "if_visible": "#banner"})
+    d["nodes"].insert(2, {"id": "dismiss", "type": "click", "selector": "#accept"})
+    d["edges"] = [["n1", "b"], ["b", "dismiss", "yes"], ["b", "n2", "no"], ["dismiss", "n2"],
+                  *[[f"n{i}", f"n{i + 1}"] for i in range(2, 10)]]
+
+
+def test_a_stop_node_on_the_branch_not_taken_is_a_flow_failure() -> None:
+    page = two_factor_page()  # no #banner, so the branch takes the "no" side
+    rec = Recorder()
+    result = login(page, observer=rec, stop_after="dismiss", use_saved_session=False,
+                   mutate=with_branch)
+    assert result is LoginResult.FLOW_FAILURE
+    assert "dismiss" not in [n for n, _ in rec.seen]
+    assert all(error is None for _, error in rec.seen)
+
+
+def test_a_stop_node_on_the_branch_taken_still_stops_there() -> None:
+    page = two_factor_page()
+    page.visible.add("#banner")
+    rec = Recorder()
+    result = login(page, observer=rec, stop_after="dismiss", use_saved_session=False,
+                   mutate=with_branch)
+    assert result is LoginResult.LOGGED_IN
+    assert [n for n, _ in rec.seen] == ["n1", "b", "dismiss"]

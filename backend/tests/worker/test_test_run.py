@@ -1,4 +1,7 @@
+import threading
+import time
 from collections.abc import Callable, Sequence
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -8,9 +11,12 @@ from app.db.repos.codes import PastedCodeRepo
 from app.db.repos.jobs import JobRecord
 from app.db.repos.suppliers import SessionCookiesRepo, SupplierRepo
 from app.db.repos.test_runs import FlowTestRunRecord, FlowTestRunRepo
+from app.flows.definition import FlowDefinition
 from app.flows.page import PageError
-from app.worker.test_run import handle_test_run
+from app.worker.jobs import serve
+from app.worker.test_run import _WaitingCodes, handle_test_run, masked_selectors
 from tests.fakes import BrokenPage, sample_flow_dict
+from tests.test_flow_observer import with_branch
 from tests.worker.conftest import BASE, World
 from tests.worker.test_login import RIGHT, LoginSite, logged_out_world
 
@@ -108,7 +114,7 @@ def test_a_run_that_needed_a_code_that_never_came_ends_without_pausing(
     def watch(seconds: float) -> None:
         run = FlowTestRunRepo(w.session)
         w.session.expire_all()
-        open_run = run.open_for_supplier(w.supplier_id)
+        open_run = run.open_for_supplier(w.supplier_id, w.now())
         if open_run is not None:
             states.append(open_run.state)
         real_sleep(seconds)
@@ -274,3 +280,96 @@ def test_a_full_login_test_run_does_not_save_cookies_to_the_suppliers_real_sessi
     assert run.login_result == "logged_in"
     w.session.expire_all()
     assert SessionCookiesRepo(w.session, w.supplier_id, w.now).get() is None
+
+
+# --- review fixes -----------------------------------------------------------------------
+
+
+def test_secret_fills_are_masked_whether_or_not_the_mask_flag_is_set() -> None:
+    data = sample_flow_dict()
+    data["nodes"][2]["mask"] = False  # the password fill
+    masks = masked_selectors(FlowDefinition.model_validate(data))
+    assert {"input[type=password]", "#password", "#otp"} <= set(masks)
+    assert "#email" not in masks  # the username is not a secret
+
+
+def test_screenshots_mask_the_password_field_even_without_the_flag(
+    make_world: Callable[..., World], tmp_path: Path
+) -> None:
+    w, site = logged_out(make_world)
+    draft = sample_flow_dict()
+    draft["nodes"][2]["mask"] = False
+    start(w, tmp_path, flow=draft)
+    assert site.screenshots
+    assert all({"input[type=password]", "#password", "#otp"} <= set(m) for m in site.screenshots)
+
+
+def test_the_run_goes_back_to_running_as_soon_as_the_code_arrives(
+    make_world: Callable[..., World],
+) -> None:
+    w = logged_out_world(make_world, LoginSite())
+    supplier = SupplierRepo(w.session, w.box).get(w.supplier_id)
+    assert supplier is not None
+    repo = FlowTestRunRepo(w.session)
+    run_id = repo.create(w.supplier_id, "login", {}, w.now())
+    repo.set_state(run_id, "running")
+    codes = _WaitingCodes(w.deps, w.session, supplier, repo, run_id)
+
+    def state() -> str:
+        w.session.expire_all()
+        run = repo.get(run_id)
+        assert run is not None
+        return run.state
+
+    assert codes.poll(0.0) is None
+    assert state() == "waiting_for_code"
+    PastedCodeRepo(w.session, w.box).submit(w.supplier_id, RIGHT, w.now())
+    assert codes.poll(0.0) == RIGHT
+    assert state() == "running"
+
+
+def test_a_stop_node_the_walk_never_reaches_fails_the_run_with_no_snapshot(
+    make_world: Callable[..., World], tmp_path: Path
+) -> None:
+    w, _ = logged_out(make_world)  # no #banner on the page, so the branch takes "no"
+    draft = sample_flow_dict()
+    with_branch(draft)
+    run = start(w, tmp_path, flow=draft, up_to_node_id="dismiss")
+    assert run.state == "failed" and run.login_result == "flow_failure"
+    assert run.error == "That step was not reached on this path (check the branch)."
+    assert run.snapshot is None
+    assert [s["node_id"] for s in run.steps][:3] == ["n1", "b", "n2"]
+
+
+def test_a_real_step_failure_before_the_stop_node_is_not_reported_as_unreachable(
+    make_world: Callable[..., World], tmp_path: Path
+) -> None:
+    w = logged_out_world(make_world, LoginSite(password_ok=False))
+    run = start(w, tmp_path, up_to_node_id="n8")
+    assert run.state == "failed" and run.login_result == "bad_credentials"
+    assert "not reached" not in (run.error or "")
+
+
+def test_the_worker_loop_fails_a_run_that_never_finished(
+    make_world: Callable[..., World],
+) -> None:
+    w = make_world(variants=1)
+    dead = FlowTestRunRepo(w.session).create(
+        w.supplier_id, "login", {}, w.now() - timedelta(minutes=31))
+    stop = threading.Event()
+    thread = threading.Thread(target=serve, args=(w.deps, stop, 30.0, 0.01), daemon=True)
+    thread.start()
+    try:
+        deadline = time.time() + 10
+        state = "queued"
+        while time.time() < deadline and state == "queued":
+            time.sleep(0.05)
+            w.session.expire_all()
+            run = FlowTestRunRepo(w.session).get(dead)
+            state = run.state if run else "gone"
+        assert state == "failed"
+        final = FlowTestRunRepo(w.session).get(dead)
+        assert final is not None and final.error == "The test run did not finish."
+    finally:
+        stop.set()
+        thread.join(timeout=5)

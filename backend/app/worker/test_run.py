@@ -8,6 +8,7 @@ and works on a copy of the saved session. Not responsible for real checks
 """
 
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,9 @@ log = logging.getLogger(__name__)
 
 PASSWORD_FIELDS = "input[type=password]"
 FINISHED = ("done", "failed")
+UNREACHED = "That step was not reached on this path (check the branch)."
+# A fill of the password or the Login Code, with or without spaces inside the braces.
+_SECRET_VALUE = re.compile(r"\{\{\s*(credentials\.password|code)\s*\}\}")
 
 
 def file_url(run_id: int, name: str) -> str:
@@ -42,10 +46,15 @@ def file_url(run_id: int, name: str) -> str:
 
 
 def masked_selectors(flow: FlowDefinition) -> list[str]:
-    """Selectors painted over in every screenshot: password fields and every secret fill."""
+    """Selectors painted over in every screenshot.
+
+    Every password input, every Fill that types the password or the Login Code (whatever
+    its `mask` flag says, since a text input with a show-password toggle is still a
+    password), and every Fill the author marked `mask`.
+    """
     found = [PASSWORD_FIELDS]
     for node in flow.nodes:
-        if isinstance(node, Fill) and (node.mask or "{{code}}" in node.value):
+        if isinstance(node, Fill) and (node.mask or _SECRET_VALUE.search(node.value)):
             found.append(node.selector)
     return list(dict.fromkeys(found))
 
@@ -64,6 +73,7 @@ class _Recorder:
         self._stop_after = stop_after
         self._number = 0
         self.stopped_early = False
+        self.step_failed = False
 
     def after_node(self, node: FlowNode, error: str | None) -> None:
         """Record one step; a failed screenshot only leaves the step without a picture."""
@@ -74,11 +84,12 @@ class _Recorder:
         self._repo.add_step(self._run_id, {
             "node_id": node.id, "type": node.type, "ok": error is None, "error": error,
             "screenshot_url": shot, "at": self._deps.now().isoformat()})
+        self.step_failed = self.step_failed or error is not None
         self.stopped_early = error is None and node.id == self._stop_after
 
 
 class _WaitingCodes(DbPastedCodeSource):
-    """The pasted-code source that also shows the run as waiting for a code."""
+    """The pasted-code source that also shows the run as waiting for a code, then running again."""
 
     def __init__(self, deps: Deps, session: Session, supplier: SupplierRecord,
                  repo: FlowTestRunRepo, run_id: int) -> None:
@@ -87,9 +98,17 @@ class _WaitingCodes(DbPastedCodeSource):
         self._announced = False
 
     def poll(self, requested_at: float) -> str | None:
-        """As the parent does, and on the first poll mark the run `waiting_for_code`."""
+        """As the parent does; `waiting_for_code` while no code, `running` once it arrives.
+
+        The state goes back at once, not when the login ends, so the dashboard's
+        "needs code" card goes away as soon as the code is taken.
+        """
         code = super().poll(requested_at)
-        if not self._announced:
+        if code is not None:
+            if self._announced:
+                self._repo.set_state(self._run_id, "running")
+                self._announced = False
+        elif not self._announced:
             self._repo.set_state(self._run_id, "waiting_for_code")
             self._announced = True
         return code
@@ -192,6 +211,12 @@ def _execute(deps: Deps, session: Session, repo: FlowTestRunRepo, run: FlowTestR
         finally:
             codes.stop_waiting()
         repo.set_state(run.id, "running")
+        if (up_to is not None and result is LoginResult.FLOW_FAILURE
+                and not recorder.step_failed and not recorder.stopped_early):
+            # Every step that ran was fine, yet the walk ended: it never touched the chosen
+            # node. No snapshot, which would look like the page at that node.
+            repo.finish(run.id, "failed", deps.now(), login_result=result.value, error=UNREACHED)
+            return
         logged_in = result in (LoginResult.LOGGED_IN, LoginResult.SESSION_REUSED)
         login_result = "stopped_after_node" if recorder.stopped_early else result.value
         reading = None

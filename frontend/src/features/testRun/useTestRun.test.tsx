@@ -176,3 +176,52 @@ it("reports a failed poll and recovers on retry", async () => {
   await waitFor(() => expect(result.current.run?.state).toBe("done"));
   expect(result.current.pollError).toBe(false);
 });
+
+const inProgress = { detail: "A test run is already in progress for this Supplier.", run_id: 7 };
+
+it("clears the previous run when a new start fails, so old results never sit beside the error", async () => {
+  serveRuns({ 1: aRun({ steps: [{ node_id: "n1", type: "goto", ok: true, error: null, screenshot_url: null, at: "2026-11-03T10:00:00Z" }] }) });
+  const { result } = setup();
+  act(() => result.current.start({ mode: "login" }));
+  await waitFor(() => expect(result.current.run?.id).toBe(1));
+  server.use(http.post(`${base}/test-runs`, () => HttpResponse.json({ detail: "boom" }, { status: 500 })));
+  act(() => result.current.start({ mode: "login" }));
+  await waitFor(() => expect(result.current.startErrors.length).toBeGreaterThan(0));
+  expect(result.current.run).toBeNull();
+});
+
+it("clears the previous run when a new start is refused with 409, and offers the run in progress", async () => {
+  serveRuns({ 1: aRun(), 7: aRun({ id: 7, state: "running" }) });
+  const { result } = setup();
+  act(() => result.current.start({ mode: "login" }));
+  await waitFor(() => expect(result.current.run?.id).toBe(1));
+  server.use(http.post(`${base}/test-runs`, () => HttpResponse.json(inProgress, { status: 409 })));
+  act(() => result.current.start({ mode: "login" }));
+  await waitFor(() => expect(result.current.inProgressRunId).toBe(7));
+  expect(result.current.run).toBeNull();
+  expect(result.current.startErrors).toEqual(["A test run is already in progress for this Supplier."]);
+});
+
+it("shows and follows the run in progress when asked to", async () => {
+  const { gets } = serveRuns({ 7: [aRun({ id: 7, state: "running" }), aRun({ id: 7, state: "done" })] });
+  server.use(http.post(`${base}/test-runs`, () => HttpResponse.json(inProgress, { status: 409 })));
+  const { result } = setup();
+  act(() => result.current.start({ mode: "login" }));
+  await waitFor(() => expect(result.current.inProgressRunId).toBe(7));
+  act(() => result.current.showInProgress());
+  await waitFor(() => expect(result.current.run?.state).toBe("done"));
+  expect(gets[7]).toBeGreaterThanOrEqual(2);
+  expect(result.current.inProgressRunId).toBeNull();
+  expect(result.current.startErrors).toEqual([]);
+});
+
+it("forgets the run in progress when the next start works", async () => {
+  server.use(http.post(`${base}/test-runs`, () => HttpResponse.json(inProgress, { status: 409 })));
+  const { result } = setup();
+  act(() => result.current.start({ mode: "login" }));
+  await waitFor(() => expect(result.current.inProgressRunId).toBe(7));
+  serveRuns({ 2: aRun({ id: 2 }) }, [2]);
+  act(() => result.current.start({ mode: "login" }));
+  await waitFor(() => expect(result.current.run?.id).toBe(2));
+  expect(result.current.inProgressRunId).toBeNull();
+});

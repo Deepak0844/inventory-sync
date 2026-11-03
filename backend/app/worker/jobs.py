@@ -13,6 +13,7 @@ from app.core.masking import mask_secrets
 from app.db.repos.jobs import JobRecord, JobRepo
 from app.db.repos.settings import SettingsRepo
 from app.db.repos.suppliers import SupplierRepo
+from app.db.repos.test_runs import FlowTestRunRepo
 from app.scheduler.tick import tick
 from app.worker.approval import handle_apply_approval
 from app.worker.check import handle_check_supplier
@@ -91,6 +92,7 @@ def serve(
                 # Every tick, not just at start: a job a dead worker left running would
                 # otherwise block its Supplier's next check until a restart.
                 JobRepo(session).requeue_stale(deps.now(), STALE_AFTER_S)
+                FlowTestRunRepo(session).reap_stale(deps.now())  # a dead worker's Test run
                 tick(session, deps.box, deps.now())
             next_tick = deps.clock.now() + tick_every_s
         if not run_once(deps):

@@ -1,7 +1,7 @@
 """Test run routes for the flow builder. A Test run never writes to Shopify."""
 
 from fastapi import APIRouter, HTTPException, Request, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.api.deps import Box, Db, Now, protected
 from app.api.schemas import (
@@ -21,12 +21,14 @@ HTML_CSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data
 FILE_TYPES = {".png": "image/png", ".html": "text/html; charset=utf-8"}
 
 
-@router.post("/test-runs", status_code=status.HTTP_202_ACCEPTED)
-def start(body: NewTestRun, session: Db, box: Box, now: Now) -> dict[str, int]:
-    """Queue a Test run and return its id (an open run for the Supplier is reused).
+@router.post("/test-runs", status_code=status.HTTP_202_ACCEPTED, response_model=None)
+def start(body: NewTestRun, session: Db, box: Box, now: Now) -> dict[str, int] | JSONResponse:
+    """Queue a Test run and return its id.
 
     404 for an unknown Supplier. 422 lists every problem with the draft flow, the node,
-    the credentials or the Listing URL, and queues nothing.
+    the credentials or the Listing URL, and queues nothing. 409 (with `run_id` of the open
+    run) when the Supplier already has a Test run in progress, so a new draft is never
+    silently answered with an old run.
     """
     try:
         run_id = service.start_test_run(session, box, now, body.supplier_id, body.mode, body.flow,
@@ -35,6 +37,10 @@ def start(body: NewTestRun, session: Db, box: Box, now: Now) -> dict[str, int]:
         raise HTTPException(status_code=404, detail="No such Supplier") from None
     except service.RunRequestInvalid as exc:
         raise HTTPException(status_code=422, detail=exc.messages) from None
+    except service.RunInProgress as exc:
+        return JSONResponse(status_code=409, content={
+            "detail": "A test run is already in progress for this Supplier.",
+            "run_id": exc.run_id})
     return {"id": run_id}
 
 
