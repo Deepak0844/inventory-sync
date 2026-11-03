@@ -80,10 +80,10 @@ def test_credentials_are_write_only(auth: TestClient, factory: sessionmaker[Sess
 def test_the_flow_is_validated_before_it_is_saved(auth: TestClient) -> None:
     s = add(auth)
     url = f"/api/suppliers/{s['id']}/flow"
-    assert auth.get(url).status_code == 404
+    assert auth.get(url).json() is None
     bad = auth.put(url, json={"supplier": "a", "version": 1})
     assert bad.status_code == 422
-    assert auth.get(url).status_code == 404
+    assert auth.get(url).json() is None  # nothing was saved
 
 
 def test_a_valid_flow_round_trips(auth: TestClient) -> None:
@@ -175,3 +175,14 @@ def test_session_age_and_last_success_are_reported(
         session.commit()
     body = auth.get(f"/api/suppliers/{s['id']}").json()
     assert body["session_age_s"] == 7200 and body["health"] == "healthy"
+
+
+def test_a_supplier_with_no_flow_yet_answers_null_not_an_error(auth: TestClient) -> None:
+    # "No flow yet" is a normal state, and a 404 shows as a red error in the browser console.
+    s = auth.post("/api/suppliers", json=NEW).json()
+    response = auth.get(f"/api/suppliers/{s['id']}/flow")
+    assert response.status_code == 200 and response.json() is None
+
+
+def test_the_flow_of_an_unknown_supplier_is_still_a_404(auth: TestClient) -> None:
+    assert auth.get("/api/suppliers/9999/flow").status_code == 404

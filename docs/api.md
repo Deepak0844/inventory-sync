@@ -11,7 +11,7 @@ JSON over HTTP under `/api`, shared by the FastAPI backend and the RTK Query sli
 `Supplier`: `{id, name, site_url, stock_source: "scrape"|"feed", interval_min, out_confirm_reads, in_confirm_reads, confirm_gap_min, removed_as_unknown, max_quantity, two_fa_methods: ("ui_code"|"email_code")[], code_window_min, paused, pause_reason, health: "healthy"|"needs_code"|"paused"|"stale"|"blocked", last_success_at, session_age_s, listing_count}`.
 - `GET /api/suppliers`, `POST /api/suppliers` (name, site_url, interval_min required), `GET|PATCH|DELETE /api/suppliers/{id}`.
 - `PUT /api/suppliers/{id}/credentials` `{username, password}` -> 204. `GET` -> `{username, has_password}`.
-- `GET|PUT /api/suppliers/{id}/flow`: the flow definition JSON (see PLAN.md section 11). `PUT` validates it and returns 422 with the validator messages.
+- `GET|PUT /api/suppliers/{id}/flow`: the flow definition JSON (see PLAN.md section 11). `GET` answers `null` (200) when the Supplier has no flow yet, and 404 only for an unknown Supplier. `PUT` validates it and returns 422 with the validator messages.
 - `POST /api/suppliers/{id}/login` (the Login button) -> 202, queues a login run. `POST /api/suppliers/{id}/retry` clears a pause. `POST /api/suppliers/{id}/check` queues a check now.
 - `GET /api/suppliers/{id}/runs` -> `{items: [{id, kind, state, started_at, finished_at, summary}]}`.
 

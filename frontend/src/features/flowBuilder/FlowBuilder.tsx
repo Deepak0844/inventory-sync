@@ -231,10 +231,9 @@ export function FlowBuilder({ supplierId, SelectorPanel = SelectorColumn }: Prop
     const started = flowQuery.startedTimeStamp;
     if (!flowQuery.isFetching && started !== undefined && started >= openedAt.current) setFresh(true);
   }, [flowQuery.isFetching, flowQuery.startedTimeStamp]);
-  const noFlowYet = (flowQuery.error as { status?: number } | undefined)?.status === 404;
 
   if (!fresh || flowQuery.isLoading || supplierQuery.isLoading) return <BlockState kind="loading" />;
-  if ((flowQuery.isError && !noFlowYet) || supplierQuery.isError || !supplierQuery.data) {
+  if (flowQuery.isError || supplierQuery.isError || !supplierQuery.data) {
     return (
       <BlockState
         kind="error"
@@ -246,8 +245,8 @@ export function FlowBuilder({ supplierId, SelectorPanel = SelectorColumn }: Prop
       />
     );
   }
-  // After a 404 RTK Query still holds the last good result as `data`; the answer now is "no flow".
-  const saved = noFlowYet ? undefined : flowQuery.data;
+  // `null` means the Supplier has no flow yet.
+  const saved = flowQuery.data;
   const initial = saved ? toFlowDoc(saved) : starterFlow(supplierQuery.data);
   return <Editor key={supplierId} supplier={supplierQuery.data} initial={initial} startsNew={!saved} SelectorPanel={SelectorPanel} />;
 }
