@@ -109,6 +109,14 @@ def test_flow_without_save_session_is_rejected() -> None:
         load(drop)
 
 
+def test_draft_may_omit_the_logged_in_marker_and_save_session() -> None:
+    data = deepcopy(sample_flow_dict())
+    data["nodes"] = data["nodes"][:-2]
+    data["edges"] = data["edges"][:-2]
+    flow = FlowDefinition.model_validate(data, context={"draft": True})
+    assert [node.id for node in flow.nodes][-1] == "n8"
+
+
 def test_label_on_a_non_branch_edge_is_rejected() -> None:
     def label(d: dict[str, Any]) -> None:
         d["edges"][0] = ["n1", "n2", "yes"]

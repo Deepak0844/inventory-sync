@@ -49,7 +49,7 @@ function Editor({ supplier, initial, startsNew, SelectorPanel }: EditorProps) {
   // Compared as JSON, so the baseline goes through the same conversion as the draft (key order).
   const [baseline, setBaseline] = useState(() => draftToFlow(draftFromFlow(initial)));
   const [isNew, setIsNew] = useState(startsNew);
-  const [savedJson, setSavedJson] = useState<string | null>(null);
+  const [saved, setSaved] = useState<{ json: string; runnable: boolean } | null>(null);
   const [server, setServer] = useState<{ json: string; found: Validation } | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [pick, setPick] = useState<{ nodeId: string | null; field: string } | null>(null);
@@ -92,7 +92,7 @@ function Editor({ supplier, initial, startsNew, SelectorPanel }: EditorProps) {
       await save({ id: supplier.id, flow: flow as unknown as FlowDefinition }).unwrap();
       setBaseline(flow);
       setIsNew(false);
-      setSavedJson(json);
+      setSaved({ json, runnable: local.ok });
       setServer(null);
     } catch (error) {
       setServer({ json, found: attachServerErrors(flowErrors(error), flow.nodes.map((n) => n.id)) });
@@ -125,8 +125,16 @@ function Editor({ supplier, initial, startsNew, SelectorPanel }: EditorProps) {
     setFormVersion((v) => v + 1);
   };
 
-  const status = edited ? "Unsaved changes" : isNew ? "Not saved yet" : savedJson === json ? "Flow saved." : "";
-  const canSave = (edited || isNew) && local.ok && !refused && !saving;
+  const status = edited
+    ? "Unsaved changes"
+    : isNew
+      ? "Not saved yet"
+      : saved?.json === json
+        ? saved.runnable
+          ? "Flow saved."
+          : "Draft saved. Finish the remaining problems before it can run."
+        : "";
+  const canSave = (edited || isNew) && !refused && !saving;
 
   return (
     <div className="flex flex-col gap-4">
@@ -137,7 +145,7 @@ function Editor({ supplier, initial, startsNew, SelectorPanel }: EditorProps) {
         {pickNote ? <p role="status" className="text-small text-negative">{pickNote}</p> : null}
         {!phone ? (
           <div className="ml-auto flex items-center gap-2">
-            {!local.ok ? <p className="text-small text-negative">Fix {plural(problemCount)} to save</p> : null}
+            {!local.ok ? <p className="text-small text-negative">Fix {plural(problemCount)} before this flow can run</p> : null}
             <Button look="secondary" onClick={revert} disabled={!edited}>Revert</Button>
             {!selected ? <Button onClick={() => void onSave()} disabled={!canSave}>Save</Button> : null}
           </div>

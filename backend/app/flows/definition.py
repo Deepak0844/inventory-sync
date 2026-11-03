@@ -53,13 +53,14 @@ class FlowDefinition(BaseModel):
     extract: ExtractRules
 
     @model_validator(mode="after")
-    def _check_graph(self) -> "FlowDefinition":
+    def _check_graph(self, info: ValidationInfo) -> "FlowDefinition":
+        draft = bool((info.context or {}).get("draft"))
         if not self.nodes:
             raise ValueError("flow has no nodes")
         ids = [n.id for n in self.nodes]
         if len(set(ids)) != len(ids):
             raise ValueError("duplicate node id")
-        if not any(isinstance(n, SaveSession) for n in self.nodes):
+        if not draft and not any(isinstance(n, SaveSession) for n in self.nodes):
             raise ValueError("flow needs a save_session node, or every run asks for a new code")
         known = set(ids)
         for source, target, *_ in self.edges:
@@ -78,7 +79,8 @@ class FlowDefinition(BaseModel):
                 raise ValueError(f"node {node.id} has more than one outgoing edge")
         order = self._topological_order()
         self._check_nodes()
-        self._check_marker_on_every_path(order)
+        if not draft:
+            self._check_marker_on_every_path(order)
         return self
 
     def _topological_order(self) -> list[str]:
