@@ -52,7 +52,7 @@ def ask(w: World, job: JobRecord, state: str) -> None:
 def outcome(w: World) -> tuple[str, str | None]:
     status = JobRepo(w.session).latest("manual_login", w.supplier_id)
     assert status is not None
-    return str(status.payload["manual_state"]), status.payload.get("error")  # type: ignore[return-value]
+    return str(status.payload["manual_state"]), status.payload.get("error")
 
 
 def saved(w: World) -> str | None:
