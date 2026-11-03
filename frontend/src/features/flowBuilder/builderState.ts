@@ -78,9 +78,34 @@ function add(draft: Draft, change: Extract<Change, { kind: "add" }>): Draft {
   const next: Draft = { ...draft, graph: { ...draft.graph, nodes } };
   const from = change.after && draft.graph.nodes.find((n) => n.id === change.after)?.data.node;
   if (!from) return next;
-  const used = new Set(draft.graph.edges.filter((e) => e.source === from.id).map((e) => e.sourceHandle ?? ""));
-  const free = from.type === "branch" ? (["yes", "no"] as const).find((l) => !used.has(l)) : used.size === 0 ? "" : undefined;
-  return free === undefined ? next : connect(next, from.id, id, free || null);
+  const outgoing = draft.graph.edges.filter((e) => e.source === from.id);
+  const adding = node.data.node;
+
+  if (from.type === "branch") {
+    const used = new Set(outgoing.map((e) => e.sourceHandle));
+    const free = (["yes", "no"] as const).find((l) => !used.has(l));
+    if (free === undefined) return next;
+    const placed = connect(next, from.id, id, free);
+    // The other path already leads somewhere: a step on this path rejoins it, which is how an
+    // optional step (such as closing a pop-up) is built.
+    const other = outgoing.find((e) => e.sourceHandle);
+    return other && adding.type !== "branch" ? relayout(connect(placed, id, other.target), id) : placed;
+  }
+
+  // Insert after the chosen step: it takes over the step's way forward, so a step added in the
+  // middle of the flow is part of it instead of floating loose.
+  const placed = connect(next, from.id, id);
+  const onward = outgoing[0];
+  if (!onward) return placed;
+  return relayout(connect(placed, id, onward.target, adding.type === "branch" ? "no" : null), id);
+}
+
+/** Positions are not saved (the flow format has none), so a step inserted in the middle is
+ * drawn by the same layout a loaded flow gets, instead of at the bottom with lines across. */
+function relayout(draft: Draft, selectedId: string): Draft {
+  const laid = draftFromFlow(draftToFlow(draft));
+  const nodes = laid.graph.nodes.map((n) => ({ ...n, selected: n.id === selectedId }));
+  return { ...draft, graph: { ...draft.graph, nodes, edges: laid.graph.edges } };
 }
 
 /** Applies one editing step. Returns the same draft when nothing changes. */
