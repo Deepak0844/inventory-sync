@@ -1,4 +1,4 @@
-import { fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen } from "@testing-library/react";
 import { useState } from "react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
@@ -169,6 +169,18 @@ describe("feedback", () => {
     expect(status).toHaveTextContent("Picked #title for Fill step, Selector");
     expect(before(status, frame())).toBe(true);
     expect(screen.queryByText(/^Click to pick/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the picked confirmation visible while another element is hovered", async () => {
+    serveHtml();
+    renderApp(<SelectorPicker snapshot={snapshot} onPick={() => {}} targetLabel="Fill step, Selector" />);
+    await loaded();
+    act(() => {
+      fireEvent.click(inFrame("#title"));
+      fireEvent.mouseOver(inFrame("a"));
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Picked #title for Fill step, Selector");
+    expect(screen.getByText('Click to pick a:has-text("Cart")')).toBeInTheDocument();
   });
 
   it("keeps naming the target the pick went to, even after the target changes", async () => {
