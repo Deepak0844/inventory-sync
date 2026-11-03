@@ -7,9 +7,10 @@ writing to Shopify.
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from app.engine.changes import VariantChange
 from app.engine.listing import ListingState
-from app.engine.safety import KillSwitchRules, VariantChange, partition_changes
-from app.engine.variant import ListingView, VariantState, decide_variant
+from app.engine.safety import KillSwitchRules, partition_changes
+from app.engine.variant import Action, ListingView, VariantState, decide_variant
 
 
 @dataclass(frozen=True)
@@ -47,23 +48,24 @@ def plan_supplier_run(
         rules: The kill switch thresholds.
 
     Returns:
-        The plan. Unknown Listings produce no change.
+        The plan. A Listing with no state entry has never been read, so it is
+        Unknown and produces no change. A Variant with no entry in `states` is
+        not managed yet. The kill switch counts the Listings of the Variants
+        that sell out, not the Variants.
 
     Raises:
-        KeyError: if a mapping names a Listing or Variant with no state entry.
         InvalidMaxQuantity: if `max_quantity` is below 1 and a quantity is needed.
     """
     changes: list[VariantChange] = []
+    flipped: set[str] = set()
     for variant in variants:
-        views = [
-            ListingView(
-                status=listing_states[lid].status,
-                priority=index,
-                quantity=listing_states[lid].quantity,
-            )
-            for index, lid in enumerate(variant.listing_ids_by_priority)
-        ]
-        decision = decide_variant(views, states[variant.variant_id], max_quantity)
+        views = []
+        for index, lid in enumerate(variant.listing_ids_by_priority):
+            state = listing_states.get(lid, ListingState())
+            views.append(ListingView(state.status, index, state.quantity))
+        decision = decide_variant(views, states.get(variant.variant_id), max_quantity)
         changes.append(VariantChange(variant.variant_id, decision))
-    partition = partition_changes(changes, total_listings, rules)
+        if decision.action is Action.SELL_OUT:
+            flipped.update(variant.listing_ids_by_priority)
+    partition = partition_changes(changes, total_listings, rules, len(flipped))
     return RunPlan(applied=partition.applied, held=partition.held)

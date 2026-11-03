@@ -1,8 +1,8 @@
+from app.engine.changes import VariantChange
 from app.engine.listing import ListingState, StockStatus
 from app.engine.safety import (
     KillSwitchRules,
     OrderFlagReason,
-    VariantChange,
     VariantSafety,
     flag_order,
     is_variant_stale,

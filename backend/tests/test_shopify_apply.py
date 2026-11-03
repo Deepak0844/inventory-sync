@@ -58,3 +58,15 @@ def test_one_rejected_variant_does_not_stop_the_others() -> None:
 def test_errors_other_than_shopify_errors_are_not_swallowed() -> None:
     with pytest.raises(RuntimeError):
         apply_changes([sell_out("a")], FakeWriter(crash={"a"}))
+
+
+@pytest.mark.parametrize("action", [Action.SELL_OUT, Action.SET_AVAILABLE])
+def test_a_change_with_an_action_but_no_quantity_is_reported_not_dropped(action: Action) -> None:
+    writer = FakeWriter()
+    broken = VariantChange("a", Decision(action, None, Reason.RESTORE))
+    report = apply_changes([broken, sell_out("b")], writer)
+    assert writer.writes == [("b", 0)]
+    assert [(f.change.variant_id, f.error) for f in report.failed] == [
+        ("a", "decision has no quantity")
+    ]
+    assert [c.variant_id for c in report.applied] == ["b"]

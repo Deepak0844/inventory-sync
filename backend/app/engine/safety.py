@@ -9,8 +9,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 
+from app.engine.changes import VariantChange
 from app.engine.listing import ListingState, StockStatus
-from app.engine.variant import Action, Decision
+from app.engine.variant import Action
 
 HOUR_S = 3600.0
 
@@ -24,14 +25,6 @@ class KillSwitchRules:
 
 
 @dataclass(frozen=True)
-class VariantChange:
-    """A Variant and what the decision engine wants to do to it."""
-
-    variant_id: str
-    decision: Decision
-
-
-@dataclass(frozen=True)
 class Partition:
     """Changes to apply now, and changes held as Pending Approval."""
 
@@ -40,7 +33,10 @@ class Partition:
 
 
 def partition_changes(
-    changes: Sequence[VariantChange], total_listings: int, rules: KillSwitchRules
+    changes: Sequence[VariantChange],
+    total_listings: int,
+    rules: KillSwitchRules,
+    flipped_listings: int | None = None,
 ) -> Partition:
     """Split one Supplier run's changes into applied and held (Pending Approval).
 
@@ -49,6 +45,10 @@ def partition_changes(
         total_listings: How many Listings the Supplier has. With none, any Sold Out
             change is held.
         rules: The kill switch thresholds.
+        flipped_listings: How many Listings flipped to Out of Stock in this run.
+            PLAN.md measures the kill switch in Listings, and a Variant can have
+            several, so the caller that knows the mapping passes this. Without it,
+            each Sold Out change counts as one flip.
 
     Returns:
         If the Sold Out flips reach `percent` of the Listings, or exceed
@@ -57,14 +57,13 @@ def partition_changes(
     """
     sell_outs = [c for c in changes if c.decision.action is Action.SELL_OUT]
     others = [c for c in changes if c.decision.action is Action.SET_AVAILABLE]
-    # A flip with no known Listings is inconsistent data, so hold it rather than guess.
-    tripped = (
-        len(sell_outs) > rules.max_flips
-        or total_listings <= 0
-        or len(sell_outs) / total_listings >= rules.percent
-    )
     if not sell_outs:
         return Partition(applied=others, held=[])
+    flips = len(sell_outs) if flipped_listings is None else flipped_listings
+    # A flip with no known Listings is inconsistent data, so hold it rather than guess.
+    tripped = (
+        flips > rules.max_flips or total_listings <= 0 or flips / total_listings >= rules.percent
+    )
     if tripped:
         return Partition(applied=others, held=sell_outs)
     return Partition(applied=[*sell_outs, *others], held=[])

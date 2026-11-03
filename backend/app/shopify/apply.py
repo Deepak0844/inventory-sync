@@ -34,6 +34,9 @@ def apply_changes(changes: Sequence[VariantChange], writer: InventoryWriter) -> 
     Args:
         changes: Cleared changes. Those with no action are skipped and appear in
             neither list, so an Unknown or unchanged Variant never reaches Shopify.
+            A change that has an action but no quantity is a bug upstream; it is
+            reported in `failed` rather than dropped, so it cannot silently leave
+            a Sold Out Variant on sale.
         writer: The Shopify inventory writer.
 
     Returns:
@@ -46,7 +49,10 @@ def apply_changes(changes: Sequence[VariantChange], writer: InventoryWriter) -> 
     report = ApplyReport()
     for change in changes:
         decision = change.decision
-        if decision.action is Action.NONE or decision.quantity is None:
+        if decision.action is Action.NONE:
+            continue
+        if decision.quantity is None:
+            report.failed.append(FailedChange(change, "decision has no quantity"))
             continue
         try:
             writer.set_available(change.variant_id, decision.quantity)
