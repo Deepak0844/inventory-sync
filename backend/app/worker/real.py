@@ -89,3 +89,15 @@ def chromium() -> Iterator[PlaywrightSupplierSession]:
                 yield session
         finally:
             browser.close()
+
+
+@contextmanager
+def visible_chromium() -> Iterator[PlaywrightSupplierSession]:
+    """A headed Chromium shown on the container's private X display."""
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=False)
+        try:
+            with PlaywrightSupplierSession(browser) as session:
+                yield session
+        finally:
+            browser.close()

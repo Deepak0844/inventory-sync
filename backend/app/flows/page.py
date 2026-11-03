@@ -58,21 +58,21 @@ class Page(Protocol):
 
 
 class BrowserSession(Protocol):
-    """A page plus the ability to save and restore its cookies."""
+    """A page plus the ability to save and restore its browser storage."""
 
     @property
     def page(self) -> Page:
         """The tab to drive."""
         ...
 
-    def cookies_json(self) -> str:
-        """Cookies as JSON."""
+    def storage_state_json(self) -> str:
+        """Cookies and origin storage as JSON."""
         ...
 
-    def load_cookies_json(self, cookies_json: str) -> None:
-        """Restore saved cookies."""
+    def load_storage_state_json(self, state_json: str) -> None:
+        """Restore saved cookies and origin storage."""
         ...
 
-    def clear_cookies(self) -> None:
-        """Forget all cookies, so a failed saved session does not leak into a fresh login."""
+    def clear_storage_state(self) -> None:
+        """Forget all storage, so a failed saved session cannot leak into a fresh login."""
         ...

@@ -202,6 +202,15 @@ def test_run_once_returns_false_when_the_queue_is_empty(make_world: Callable[...
     assert run_once(make_world(variants=1).deps) is False
 
 
+def test_the_regular_worker_leaves_manual_login_for_its_own_worker(
+    make_world: Callable[..., World],
+) -> None:
+    w = make_world(variants=1)
+    JobRepo(w.session).enqueue("manual_login", w.supplier_id, {}, w.now(), w.now())
+    assert run_once(w.deps) is False
+    assert JobRepo(w.session).latest("manual_login", w.supplier_id).state == "queued"  # type: ignore[union-attr]
+
+
 def test_run_once_completes_a_job(make_world: Callable[..., World]) -> None:
     w = make_world(variants=1)
     w.set_stock("In stock")

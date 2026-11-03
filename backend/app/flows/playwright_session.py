@@ -6,7 +6,7 @@ Not responsible for what happens on the pages.
 import json
 from collections.abc import Sequence
 from types import TracebackType
-from typing import Any
+from typing import Any, cast
 
 from playwright.sync_api import Browser, BrowserContext, Error
 from playwright.sync_api import Page as PlaywrightPage
@@ -92,9 +92,14 @@ class PlaywrightSupplierSession:
         self._page: PlaywrightPageAdapter | None = None
 
     def __enter__(self) -> "PlaywrightSupplierSession":
-        self._context = self._browser.new_context()
-        self._page = PlaywrightPageAdapter(self._context.new_page())
+        self._replace_context()
         return self
+
+    def _replace_context(self, storage_state: dict[str, Any] | None = None) -> None:
+        if self._context is not None:
+            self._context.close()
+        self._context = self._browser.new_context(storage_state=cast(Any, storage_state))
+        self._page = PlaywrightPageAdapter(self._context.new_page())
 
     def __exit__(
         self,
@@ -117,21 +122,26 @@ class PlaywrightSupplierSession:
             raise SessionNotOpenError("open the session with `with` first")
         return self._context
 
-    def cookies_json(self) -> str:
-        """Return the context's cookies as JSON."""
-        return json.dumps(self._open_context().cookies())
+    def storage_state_json(self) -> str:
+        """Return cookies and local storage as Playwright storage-state JSON."""
+        return json.dumps(self._open_context().storage_state())
 
-    def load_cookies_json(self, cookies_json: str) -> None:
-        """Add previously saved cookies to the context."""
-        cookies: list[Any] = json.loads(cookies_json)
+    def load_storage_state_json(self, state_json: str) -> None:
+        """Restore storage state, accepting legacy cookie-list JSON."""
+        state: Any = json.loads(state_json)
         try:
-            self._open_context().add_cookies(cookies)
+            if isinstance(state, list):
+                self._open_context().add_cookies(state)
+            elif isinstance(state, dict):
+                self._replace_context(state)
+            else:
+                raise ValueError("browser state must be an object or cookie list")
         except Error as exc:
             raise PageError("could not restore saved cookies") from exc
 
-    def clear_cookies(self) -> None:
-        """Remove every cookie from the context. Raises PageError if the browser fails."""
+    def clear_storage_state(self) -> None:
+        """Replace the current context with an empty one."""
         try:
-            self._open_context().clear_cookies()
+            self._replace_context()
         except Error as exc:
-            raise PageError("could not clear cookies") from exc
+            raise PageError("could not clear browser state") from exc

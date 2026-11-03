@@ -1,4 +1,4 @@
-"""Encrypted storage for a Supplier's saved browser session (cookies).
+"""Encrypted storage for a Supplier's saved browser session state.
 
 Not responsible for deciding whether a session is still valid.
 """
@@ -51,9 +51,9 @@ class EncryptedSessionStore:
         token = self._repository.get()
         return None if token is None else self._box.decrypt(token)
 
-    def save(self, cookies_json: str) -> None:
-        """Encrypt and store the cookies."""
-        self._repository.put(self._box.encrypt(cookies_json))
+    def save(self, state_json: str) -> None:
+        """Encrypt and store the browser state."""
+        self._repository.put(self._box.encrypt(state_json))
 
     def clear(self) -> None:
         """Forget the saved session."""

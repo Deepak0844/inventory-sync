@@ -240,7 +240,7 @@ def _manual_view(job: Any, browser_url: str) -> ManualLoginView:
     expires_at = datetime.fromisoformat(str(job.payload["expires_at"]))
     return ManualLoginView(
         job.id, str(job.payload.get("manual_state", "queued")), expires_at,
-        browser_url, job.last_error,
+        browser_url, job.payload.get("error") or job.last_error,
     )
 
 

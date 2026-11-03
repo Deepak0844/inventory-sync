@@ -52,7 +52,10 @@ class JobRepo:
         self._s.commit()
         return job.id
 
-    def claim_next(self, now: datetime, kinds: set[str] | None = None) -> JobRecord | None:
+    def claim_next(
+        self, now: datetime, kinds: set[str] | None = None,
+        exclude_kinds: set[str] | None = None,
+    ) -> JobRecord | None:
         """Claim the oldest due job, or return None.
 
         `FOR UPDATE SKIP LOCKED` lets many workers poll at once without ever
@@ -61,6 +64,8 @@ class JobRepo:
         query = select(Job).where(Job.state == "queued", Job.run_after <= now)
         if kinds is not None:
             query = query.where(Job.kind.in_(kinds))
+        if exclude_kinds is not None:
+            query = query.where(Job.kind.not_in(exclude_kinds))
         job = self._s.execute(
             query
             .order_by(Job.run_after, Job.id).limit(1).with_for_update(skip_locked=True)
@@ -77,7 +82,7 @@ class JobRepo:
         """Return the newest job of this kind for a Supplier."""
         job = self._s.scalar(
             select(Job).where(Job.kind == kind, Job.supplier_id == supplier_id)
-            .order_by(Job.id.desc()).limit(1)
+            .order_by(Job.id.desc()).limit(1).execution_options(populate_existing=True)
         )
         return None if job is None else JobStatus(
             job.id, job.state, dict(job.payload), job.last_error

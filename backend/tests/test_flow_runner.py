@@ -60,11 +60,11 @@ def test_login_fills_templates_from_credentials_and_code() -> None:
     assert s.page.filled == {"#email": "owner", "#password": "s3cret", "#otp": "123456"}
 
 
-def test_successful_login_saves_the_session_encrypted() -> None:
+def test_successful_login_saves_the_complete_browser_state_encrypted() -> None:
     s = setup(two_factor_page())
     s.pasted.submit("123456")
     s.login()
-    assert s.store.load() == '[{"name": "session"}]'
+    assert s.store.load() == '{"cookies": [{"name": "session"}], "origins": []}'
 
 
 def test_wrong_code_is_wrong_code() -> None:
@@ -265,10 +265,10 @@ def test_corrupt_saved_cookies_are_discarded_and_login_continues() -> None:
     class RejectingSession(FakeBrowserSession):
         cleared_flag = False
 
-        def load_cookies_json(self, cookies_json: str) -> None:
+        def load_storage_state_json(self, state_json: str) -> None:
             raise ValueError("not json")
 
-        def clear_cookies(self) -> None:
+        def clear_storage_state(self) -> None:
             self.cleared_flag = True
 
     s = setup(two_factor_page())
@@ -280,7 +280,7 @@ def test_corrupt_saved_cookies_are_discarded_and_login_continues() -> None:
     assert session.cleared_flag
 
 
-def test_cookies_of_an_expired_session_are_cleared_before_the_fresh_login() -> None:
+def test_storage_of_an_expired_session_is_cleared_before_the_fresh_login() -> None:
     s = setup(two_factor_page())
     s.store.save("[]")
     s.pasted.submit("123456")

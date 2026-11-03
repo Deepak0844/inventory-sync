@@ -148,8 +148,9 @@ def test_manual_login_queues_one_session_and_can_cancel_it(
 ) -> None:
     from tests.fakes import sample_flow_dict
 
-    auth.app.state.manual_browser_enabled = True
-    auth.app.state.manual_browser_url = "http://127.0.0.1:6080/vnc.html"
+    app: Any = auth.app
+    app.state.manual_browser_enabled = True
+    app.state.manual_browser_url = "http://127.0.0.1:6080/vnc.html"
     s = add(auth)
     assert auth.put(f"/api/suppliers/{s['id']}/flow", json=sample_flow_dict()).status_code == 200
     url = f"/api/suppliers/{s['id']}/manual-login"
@@ -172,7 +173,8 @@ def test_manual_login_needs_the_private_browser_and_a_complete_flow(auth: TestCl
     s = add(auth)
     url = f"/api/suppliers/{s['id']}/manual-login"
     assert auth.post(url).status_code == 503
-    auth.app.state.manual_browser_enabled = True
+    app: Any = auth.app
+    app.state.manual_browser_enabled = True
     unavailable = auth.post(url)
     assert unavailable.status_code == 409
     assert "complete flow" in unavailable.text.lower()

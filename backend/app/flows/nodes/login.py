@@ -48,11 +48,11 @@ class AwaitCode(BaseNode):
 
 
 class SaveSession(BaseNode):
-    """Save the browser's cookies, encrypted, for the next run."""
+    """Save the browser's session state, encrypted, for the next run."""
 
     type: Literal["save_session"] = "save_session"
 
     def run(self, ctx: FlowContext) -> str | None:
-        """Encrypt and store the current cookies."""
-        ctx.store.save(ctx.session.cookies_json())
+        """Encrypt and store the current browser state."""
+        ctx.store.save(ctx.session.storage_state_json())
         return None

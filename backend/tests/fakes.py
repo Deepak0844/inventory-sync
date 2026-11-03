@@ -140,11 +140,11 @@ class FakeBrowserSession:
         self.loaded: str | None = None
         self.cleared = 0
 
-    def cookies_json(self) -> str:
-        return '[{"name": "session"}]'
+    def storage_state_json(self) -> str:
+        return '{"cookies": [{"name": "session"}], "origins": []}'
 
-    def load_cookies_json(self, cookies_json: str) -> None:
-        self.loaded = cookies_json
+    def load_storage_state_json(self, state_json: str) -> None:
+        self.loaded = state_json
 
-    def clear_cookies(self) -> None:
+    def clear_storage_state(self) -> None:
         self.cleared += 1
