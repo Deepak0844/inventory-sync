@@ -14,8 +14,9 @@ Keeps a dropshipping Shopify store honest about availability. It watches each Su
 - **Decides** with pure functions in `backend/app/engine/`. Out of Stock needs two readings about 30 minutes apart, In Stock needs one, and an Unknown reading never changes Shopify.
 - **Protects** the store: if 30% or more of a Supplier's Listings (or more than 20) flip to Out of Stock in one run, the changes wait as Pending Approval. Orders containing a Stale or recently Sold Out Variant are flagged "verify with Supplier". A Supplier is paused after a wrong password or two wrong codes.
 - **Shows** it all in a dashboard (Suppliers, Listings and CSV import, Variants, approvals, notifications, orders to verify, settings).
+- **Builds flows visually.** The flow builder has a palette of steps, a selector picker that works on a snapshot of the real page, and Test runs that show each step with masked screenshots. Test runs never write to Shopify.
 
-Not built yet: the visual flow editor (a Supplier's flow is JSON for now), deployment (VPS, Caddy, backups), the `code` flow node, and Suppliers that offer a feed instead of a site.
+Not built yet: deployment (VPS, Caddy, backups), the `code` flow node, and Suppliers that offer a feed instead of a site.
 
 ## Run it locally
 
