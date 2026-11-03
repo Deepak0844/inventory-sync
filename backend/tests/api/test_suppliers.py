@@ -166,12 +166,13 @@ def test_manual_login_queues_one_session_and_can_cancel_it(
     assert auth.post(url).json()["id"] == 1
     assert jobs(factory) == [("manual_login", s["id"])]
     assert auth.delete(url).status_code == 204
-    assert auth.get(url).json()["state"] == "cancelled"
+    assert auth.get(url).json()["session"]["state"] == "cancelled"
 
 
 def test_manual_login_needs_the_private_browser_and_a_complete_flow(auth: TestClient) -> None:
     s = add(auth)
     url = f"/api/suppliers/{s['id']}/manual-login"
+    assert auth.get(url).json() == {"enabled": False, "session": None}
     assert auth.post(url).status_code == 503
     app: Any = auth.app
     app.state.manual_browser_enabled = True

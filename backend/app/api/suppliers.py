@@ -10,6 +10,7 @@ from app.api.schemas import (
     CredentialsOut,
     FlowJson,
     ManualLoginOut,
+    ManualLoginStatusOut,
     RunsOut,
     SupplierCreate,
     SupplierOut,
@@ -155,17 +156,27 @@ def start_manual_login(
         raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
-@router.get("/suppliers/{supplier_id}/manual-login", response_model=ManualLoginOut | None)
+@router.get("/suppliers/{supplier_id}/manual-login", response_model=ManualLoginStatusOut)
 def get_manual_login(
     supplier_id: int, request: Request, session: Db, box: Box
-) -> service.ManualLoginView | None:
+) -> ManualLoginStatusOut:
     """Read the current private-browser login status."""
+    if not request.app.state.manual_browser_enabled:
+        return ManualLoginStatusOut(enabled=False, session=None)
     try:
-        return service.get_manual_login(
-            session, box, supplier_id, _manual_config(request)
+        current = service.get_manual_login(
+            session, box, supplier_id, str(request.app.state.manual_browser_url)
         )
     except service.SupplierNotFound:
         raise NOT_FOUND from None
+    return ManualLoginStatusOut(
+        enabled=True,
+        session=(
+            None
+            if current is None
+            else ManualLoginOut.model_validate(current, from_attributes=True)
+        ),
+    )
 
 
 @router.delete("/suppliers/{supplier_id}/manual-login", status_code=status.HTTP_204_NO_CONTENT)

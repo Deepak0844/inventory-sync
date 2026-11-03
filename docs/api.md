@@ -25,7 +25,7 @@ A Test run executes a flow in the worker's browser and reports each step. **It n
 When the private manual-browser profile is enabled, a human can establish a reusable session for a Supplier whose site presents a CAPTCHA:
 
 - `POST /api/suppliers/{id}/manual-login` queues a 10-minute visible-browser session. It is idempotent while one is queued or running.
-- `GET /api/suppliers/{id}/manual-login` returns the latest state: `queued`, `ready`, `succeeded`, `failed`, `expired`, or `cancelled`.
+- `GET /api/suppliers/{id}/manual-login` returns `{enabled, session}`. `session` is null or the latest attempt with state `queued`, `ready`, `succeeded`, `failed`, `expired`, or `cancelled`.
 - `DELETE /api/suppliers/{id}/manual-login` cancels an open session.
 
 The response includes the loopback noVNC URL. Access is intended through an SSH tunnel; the VNC password is never returned by the API.

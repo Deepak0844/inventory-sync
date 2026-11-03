@@ -90,6 +90,11 @@ class ManualLoginOut(BaseModel):
     error: str | None
 
 
+class ManualLoginStatusOut(BaseModel):
+    enabled: bool
+    session: ManualLoginOut | None
+
+
 class RunOut(Out):
     id: int
     kind: str

@@ -2,13 +2,15 @@ import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 
 import type {
   AppNotification, Approval, Banner, FlaggedOrder, FlowDefinition, ImportResult, Listing,
-  ListingQuery, LoginBody, Mapping, Me, NewSupplier, Overview, PendingCode, Page, Run, Settings,
-  NewTestRun, SettingsUpdate, Supplier, SupplierCredentials, TestResult, TestRun, VariantQuery, VariantRow,
+  ListingQuery, LoginBody, ManualLogin, ManualLoginStatus, Mapping, Me, NewSupplier, Overview,
+  PendingCode, Page, Run, Settings, NewTestRun, SettingsUpdate, Supplier, SupplierCredentials,
+  TestResult, TestRun, VariantQuery, VariantRow,
 } from "./types";
 
 const tags = [
   "Auth", "Supplier", "Credentials", "Flow", "Runs", "PendingCode", "Listing", "Variant",
   "Approval", "Notification", "Order", "Overview", "Banner", "Settings", "TestRun",
+  "ManualLogin",
 ] as const;
 
 /** The one API slice. Endpoints are grouped by resource, in the order of docs/api.md. */
@@ -77,6 +79,18 @@ export const api = createApi({
     startLogin: b.mutation<void, number>({
       query: (id) => ({ url: `/suppliers/${id}/login`, method: "POST" }),
       invalidatesTags: ["Supplier", "Runs", "PendingCode"],
+    }),
+    manualLoginStatus: b.query<ManualLoginStatus, number>({
+      query: (id) => `/suppliers/${id}/manual-login`,
+      providesTags: (_r, _e, id) => [{ type: "ManualLogin", id }],
+    }),
+    startManualLogin: b.mutation<ManualLogin, number>({
+      query: (id) => ({ url: `/suppliers/${id}/manual-login`, method: "POST" }),
+      invalidatesTags: (_r, _e, id) => [{ type: "ManualLogin", id }],
+    }),
+    cancelManualLogin: b.mutation<void, number>({
+      query: (id) => ({ url: `/suppliers/${id}/manual-login`, method: "DELETE" }),
+      invalidatesTags: (_r, _e, id) => [{ type: "ManualLogin", id }],
     }),
     retrySupplier: b.mutation<void, number>({
       query: (id) => ({ url: `/suppliers/${id}/retry`, method: "POST" }),
@@ -179,6 +193,7 @@ export const {
   useSuppliersQuery, useSupplierQuery, useAddSupplierMutation, useUpdateSupplierMutation,
   useDeleteSupplierMutation, useCredentialsQuery, useSetCredentialsMutation, useFlowQuery,
   useSetFlowMutation, useStartLoginMutation, useRetrySupplierMutation, useCheckSupplierMutation,
+  useManualLoginStatusQuery, useStartManualLoginMutation, useCancelManualLoginMutation,
   useStartTestRunMutation, useTestRunQuery, useRunsQuery, usePendingCodesQuery, useSubmitCodeMutation, useListingsQuery,
   useImportListingsMutation, useVariantsQuery, useMappingsQuery, useSetMappingsMutation,
   useApprovalsQuery, useApproveMutation, useRejectMutation, useNotificationsQuery,

@@ -13,6 +13,9 @@ const open = (over = {}) => {
     http.get(`${API}/suppliers/1`, () => HttpResponse.json(supplier(over))),
     http.get(`${API}/suppliers/1/credentials`, () => HttpResponse.json({ username: "shop-owner", has_password: true })),
     http.get(`${API}/suppliers/1/flow`, () => HttpResponse.json({ supplier: "supplier-a", version: 1 })),
+    http.get(`${API}/suppliers/1/manual-login`, () =>
+      HttpResponse.json({ enabled: false, session: null }),
+    ),
     http.get(`${API}/suppliers/1/runs`, () =>
       HttpResponse.json({
         items: [{ id: 9, kind: "check", state: "done", started_at: new Date().toISOString(), finished_at: null, summary: "120 listings read" }],
@@ -148,6 +151,59 @@ describe("Login and 2FA tab", () => {
     await goToLogin();
     await screen.findByText("Session age: 2 h");
     expect(screen.queryByRole("button", { name: "Retry login" })).not.toBeInTheDocument();
+  });
+
+  it("starts a private manual login and opens the ready browser", async () => {
+    let started = false;
+    const ready = {
+      id: 7,
+      state: "ready",
+      expires_at: "2026-11-03T12:10:00Z",
+      browser_url: "http://127.0.0.1:6080/vnc.html",
+      error: null,
+    };
+    open();
+    server.use(
+      http.get(`${API}/suppliers/1/manual-login`, () =>
+        HttpResponse.json({ enabled: true, session: started ? ready : null }),
+      ),
+      http.post(`${API}/suppliers/1/manual-login`, () => {
+        started = true;
+        return HttpResponse.json(ready, { status: 201 });
+      }),
+    );
+    await userEvent.click(await screen.findByRole("tab", { name: "Login and 2FA" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Manual login" }));
+    expect(await screen.findByRole("link", { name: "Open private browser" })).toHaveAttribute(
+      "href", "http://127.0.0.1:6080/vnc.html",
+    );
+    expect(screen.getByText(/SSH tunnel/)).toBeInTheDocument();
+  });
+
+  it("cancels a ready private browser session", async () => {
+    let cancelled = false;
+    open();
+    server.use(
+      http.get(`${API}/suppliers/1/manual-login`, () =>
+        HttpResponse.json({
+          enabled: true,
+          session: {
+            id: 8,
+            state: "ready",
+            expires_at: "2026-11-03T12:10:00Z",
+            browser_url: "http://127.0.0.1:6080/vnc.html",
+            error: null,
+          },
+        }),
+      ),
+      http.delete(`${API}/suppliers/1/manual-login`, () => {
+        cancelled = true;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await userEvent.click(await screen.findByRole("tab", { name: "Login and 2FA" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Cancel manual login" }));
+    await waitFor(() => expect(cancelled).toBe(true));
   });
 });
 
