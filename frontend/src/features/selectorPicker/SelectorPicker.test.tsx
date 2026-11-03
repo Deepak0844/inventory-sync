@@ -147,7 +147,7 @@ describe("feedback", () => {
     serveHtml();
     renderApp(<SelectorPicker snapshot={snapshot} onPick={() => {}} targetLabel="Fill step, Selector" />);
     await loaded();
-    const line = screen.getByText("Picking for: Fill step, Selector");
+    const line = screen.getByText("Your next click fills: Fill step, Selector");
     expect(before(line, frame())).toBe(true);
   });
 
