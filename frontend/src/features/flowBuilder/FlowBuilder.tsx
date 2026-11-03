@@ -1,5 +1,5 @@
 import { ReactFlowProvider } from "@xyflow/react";
-import { useEffect, useMemo, useReducer, useState, type ComponentType } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState, type ComponentType } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useFlowQuery, useSetFlowMutation, useSupplierQuery } from "../../api/api";
@@ -219,11 +219,21 @@ interface Props {
 
 /** Screen 8, the builder for one Supplier's flow: loads it, then hands over to the editor. */
 export function FlowBuilder({ supplierId, SelectorPanel = SelectorColumn }: Props) {
-  const flowQuery = useFlowQuery(supplierId);
+  // RTK Query reuses a cached result for 60 s after a screen is left, so a flow changed or deleted
+  // meanwhile would still show. Ask again on every open, and wait for that answer once, so a later
+  // refetch (after Save) does not replace the editor and lose what is being edited.
+  const flowQuery = useFlowQuery(supplierId, { refetchOnMountOrArgChange: true });
   const supplierQuery = useSupplierQuery(supplierId);
+  const openedAt = useRef(Date.now());
+  const [fresh, setFresh] = useState(false);
+  useEffect(() => {
+    // Fresh means the answer comes from a request that started after this screen opened.
+    const started = flowQuery.startedTimeStamp;
+    if (!flowQuery.isFetching && started !== undefined && started >= openedAt.current) setFresh(true);
+  }, [flowQuery.isFetching, flowQuery.startedTimeStamp]);
   const noFlowYet = (flowQuery.error as { status?: number } | undefined)?.status === 404;
 
-  if (flowQuery.isLoading || supplierQuery.isLoading) return <BlockState kind="loading" />;
+  if (!fresh || flowQuery.isLoading || supplierQuery.isLoading) return <BlockState kind="loading" />;
   if ((flowQuery.isError && !noFlowYet) || supplierQuery.isError || !supplierQuery.data) {
     return (
       <BlockState
@@ -236,6 +246,8 @@ export function FlowBuilder({ supplierId, SelectorPanel = SelectorColumn }: Prop
       />
     );
   }
-  const initial = flowQuery.data ? toFlowDoc(flowQuery.data) : starterFlow(supplierQuery.data);
-  return <Editor key={supplierId} supplier={supplierQuery.data} initial={initial} startsNew={!flowQuery.data} SelectorPanel={SelectorPanel} />;
+  // After a 404 RTK Query still holds the last good result as `data`; the answer now is "no flow".
+  const saved = noFlowYet ? undefined : flowQuery.data;
+  const initial = saved ? toFlowDoc(saved) : starterFlow(supplierQuery.data);
+  return <Editor key={supplierId} supplier={supplierQuery.data} initial={initial} startsNew={!saved} SelectorPanel={SelectorPanel} />;
 }

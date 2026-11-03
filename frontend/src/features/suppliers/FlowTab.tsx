@@ -8,7 +8,7 @@ import { flowErrors, parseFlowJson } from "./flowErrors";
 
 /** Edits the flow as JSON. The visual editor arrives in Phase 6 and opens this same JSON. */
 export function FlowTab({ supplierId }: { supplierId: number }) {
-  const q = useFlowQuery(supplierId);
+  const q = useFlowQuery(supplierId, { refetchOnMountOrArgChange: true });
   const [save, { isLoading }] = useSetFlowMutation();
   const [text, setText] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);

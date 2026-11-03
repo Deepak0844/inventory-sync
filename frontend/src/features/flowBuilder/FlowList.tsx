@@ -7,7 +7,7 @@ import { Pill } from "../../components/ui/Pill";
 import { toFlowDoc } from "./flowDoc";
 
 function FlowStatus({ id }: { id: number }) {
-  const q = useFlowQuery(id);
+  const q = useFlowQuery(id, { refetchOnMountOrArgChange: true });
   if (q.isLoading) return <span aria-busy="true" className="inline-block h-4 w-reading rounded-control bg-active" />;
   if (!q.data) return <Pill tone="warning">No flow yet</Pill>;
   const steps = toFlowDoc(q.data).nodes.length;
