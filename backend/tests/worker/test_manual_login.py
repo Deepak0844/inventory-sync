@@ -207,3 +207,16 @@ def test_only_the_suppliers_own_cookies_are_saved(make_world: Callable[..., Worl
     assert stored is not None
     domains = [c["domain"] for c in json.loads(stored)["cookies"]]
     assert domains == [".supplier.test", "supplier.test", "shop.supplier.test"]
+
+
+def test_a_failed_check_says_which_page_it_opened_and_how_many_cookies_it_had(
+    make_world: Callable[..., World],
+) -> None:
+    """So a wrong logged-in URL can be told apart from a login that did not stick."""
+    w = make_world(variants=1)
+    w.page.visible.discard(".me")
+    w.profile.cookie_domains = [".supplier.test", ".google.com"]
+    run(w, start(w))
+    _, error = outcome(w)
+    assert error is not None
+    assert "http://supplier.test/account" in error and "1 cookie" in error

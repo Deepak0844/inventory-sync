@@ -99,10 +99,14 @@ def _save_if_logged_in(
     jobs.set_result(job.id, "verifying")
     with deps.profile_browser(profile_dir) as browser:
         browser.page.goto(flow.logged_in_url)
-        if not browser.page.is_visible(flow.logged_in_marker):
-            jobs.set_result(job.id, "failed", error=NOT_LOGGED_IN)
-            return
         state = _supplier_cookies_only(browser.storage_state_json(), supplier.site_url)
+        if not browser.page.is_visible(flow.logged_in_marker):
+            count = len(json.loads(state)["cookies"])
+            # The page and cookie count tell a wrong logged-in URL from a login that did not stick.
+            detail = (f"Opened {browser.page.url or flow.logged_in_url} with {count} "
+                      f"cookie{'' if count == 1 else 's'} from the browser.")
+            jobs.set_result(job.id, "failed", error=f"{NOT_LOGGED_IN} {detail}")
+            return
     EncryptedSessionStore(
         deps.box, SessionCookiesRepo(session, supplier.id, deps.now)).save(state)
     SupplierRepo(session, deps.box).update(
