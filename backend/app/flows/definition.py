@@ -52,6 +52,13 @@ class FlowDefinition(BaseModel):
     edges: list[Edge]
     extract: ExtractRules
 
+    @classmethod
+    def validate_for_manual_login(cls, raw: object) -> "FlowDefinition":
+        """Accept an otherwise-valid draft once its logged-in marker can be observed."""
+        flow = cls.model_validate(raw, context={"draft": True})
+        _ = flow.logged_in_marker
+        return flow
+
     @model_validator(mode="after")
     def _check_graph(self, info: ValidationInfo) -> "FlowDefinition":
         draft = bool((info.context or {}).get("draft"))

@@ -252,8 +252,12 @@ def start_manual_login(
 ) -> ManualLoginView:
     """Queue one short-lived visible-browser login, idempotently."""
     _record(session, box, supplier_id)
-    if SupplierRepo(session, box).get_flow(supplier_id) is None:
-        raise ManualLoginUnavailable("Save a complete flow before starting manual login")
+    suppliers = SupplierRepo(session, box)
+    raw_flow = suppliers.get_flow(supplier_id) or suppliers.get_flow_draft(supplier_id)
+    try:
+        FlowDefinition.validate_for_manual_login(raw_flow)
+    except (ValidationError, ValueError):
+        raise ManualLoginUnavailable("Save a complete flow before starting manual login") from None
     jobs = JobRepo(session)
     latest = jobs.latest("manual_login", supplier_id)
     if latest is not None:

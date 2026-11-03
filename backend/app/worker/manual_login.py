@@ -3,6 +3,7 @@
 from datetime import datetime
 from urllib.parse import urljoin
 
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.encryption import DecryptionError
@@ -21,11 +22,15 @@ def handle_manual_login(deps: Deps, session: Session, job: JobRecord) -> None:
     jobs = JobRepo(session)
     suppliers = SupplierRepo(session, deps.box)
     supplier = suppliers.get(job.supplier_id)
-    raw_flow = suppliers.get_flow(job.supplier_id)
+    raw_flow = suppliers.get_flow(job.supplier_id) or suppliers.get_flow_draft(job.supplier_id)
     if supplier is None or raw_flow is None:
         jobs.set_result(job.id, "failed", error="Supplier or complete flow is missing")
         return
-    flow = FlowDefinition.model_validate(raw_flow)
+    try:
+        flow = FlowDefinition.validate_for_manual_login(raw_flow)
+    except (ValidationError, ValueError) as exc:
+        jobs.set_result(job.id, "failed", error=str(exc))
+        return
     expires_at = datetime.fromisoformat(str(job.payload["expires_at"]))
     store = EncryptedSessionStore(
         deps.box, SessionCookiesRepo(session, supplier.id, deps.now)

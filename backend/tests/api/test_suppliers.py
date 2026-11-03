@@ -181,6 +181,21 @@ def test_manual_login_needs_the_private_browser_and_a_complete_flow(auth: TestCl
     assert "complete flow" in unavailable.text.lower()
 
 
+def test_manual_login_accepts_a_draft_with_a_complete_login_path(auth: TestClient) -> None:
+    from tests.fakes import sample_flow_dict
+
+    app: Any = auth.app
+    app.state.manual_browser_enabled = True
+    flow = sample_flow_dict()
+    flow["extract"]["stock_selector"] = ""
+    s = add(auth)
+    assert auth.put(f"/api/suppliers/{s['id']}/flow", json=flow).status_code == 200
+
+    response = auth.post(f"/api/suppliers/{s['id']}/manual-login")
+
+    assert response.status_code == 201
+
+
 def test_a_crashed_manual_browser_expires_and_can_be_started_again(
     auth: TestClient, clock: Clock,
 ) -> None:
