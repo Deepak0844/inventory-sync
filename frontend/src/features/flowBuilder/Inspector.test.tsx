@@ -71,13 +71,18 @@ it("says a Save session step has nothing to set", () => {
 
 it("asks to pick a selector from the page and says which field is waiting", async () => {
   const p = setup(node("n4"));
-  await userEvent.click(screen.getByRole("button", { name: "Pick selector for Selector" }));
+  const button = screen.getByRole("button", { name: "Pick selector for Selector" });
+  expect(button).toHaveTextContent("Pick from page");
+  await userEvent.click(button);
   expect(p.onPick).toHaveBeenCalledWith("selector");
 });
 
 it("shows the field that is waiting for a pick as active", () => {
   setup(node("n4"), sampleFlow(), "selector");
-  expect(screen.getByRole("button", { name: "Pick selector for Selector" })).toHaveAttribute("aria-pressed", "true");
+  const button = screen.getByRole("button", { name: "Cancel selector pick for Selector" });
+  expect(button).toHaveAttribute("aria-pressed", "true");
+  expect(button).toHaveTextContent("Cancel");
+  expect(screen.getByText("Now click an element in the Page preview below.")).toBeInTheDocument();
 });
 
 it("stops waiting for a pick once the person types the selector themselves", async () => {

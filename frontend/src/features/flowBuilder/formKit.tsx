@@ -35,31 +35,34 @@ export function SelectorField({ label, field, picking, onPick, error, inputProps
   const active = picking === field;
   const flash = useContext(PickFlashContext) === field;
   return (
-    <div
-      data-flash={flash ? "" : undefined}
-      className={`flex items-end gap-2 rounded-control ${flash ? "bg-pill-positive ring-2 ring-positive" : ""}`}
-    >
-      <div className="min-w-0 flex-1">
-        <TextField
-          label={label}
-          error={error}
-          {...inputProps}
-          onChange={(event) => {
-            void inputProps.onChange?.(event);
-            // Typing the selector yourself answers the pick, so stop waiting for a click.
-            if (active) onPick(field);
-          }}
-        />
-      </div>
-      <Button
-        look="secondary"
-        aria-label={`Pick selector for ${label}`}
-        aria-pressed={active}
-        onClick={() => onPick(field)}
-        className={active ? "bg-active" : ""}
+    <div className="flex flex-col gap-1">
+      <div
+        data-flash={flash ? "" : undefined}
+        className={`flex items-end gap-2 rounded-control ${flash ? "bg-pill-positive ring-2 ring-positive" : ""}`}
       >
-        {active ? "Picking…" : "Pick"}
-      </Button>
+        <div className="min-w-0 flex-1">
+          <TextField
+            label={label}
+            error={error}
+            {...inputProps}
+            onChange={(event) => {
+              void inputProps.onChange?.(event);
+              // Typing the selector yourself answers the pick, so stop waiting for a click.
+              if (active) onPick(field);
+            }}
+          />
+        </div>
+        <Button
+          look="secondary"
+          aria-label={active ? `Cancel selector pick for ${label}` : `Pick selector for ${label}`}
+          aria-pressed={active}
+          onClick={() => onPick(field)}
+          className={active ? "bg-active" : ""}
+        >
+          {active ? "Cancel" : "Pick from page"}
+        </Button>
+      </div>
+      {active ? <p className="text-small text-muted">Now click an element in the Page preview below.</p> : null}
     </div>
   );
 }
