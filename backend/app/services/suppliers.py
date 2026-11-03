@@ -238,8 +238,11 @@ def queue_action(
 
 def _manual_view(job: Any, browser_url: str) -> ManualLoginView:
     expires_at = datetime.fromisoformat(str(job.payload["expires_at"]))
+    state = str(job.payload.get("manual_state", "queued"))
+    if job.state == "failed" and state in {"queued", "ready"}:
+        state = "failed"
     return ManualLoginView(
-        job.id, str(job.payload.get("manual_state", "queued")), expires_at,
+        job.id, state, expires_at,
         browser_url, job.payload.get("error") or job.last_error,
     )
 
@@ -253,6 +256,11 @@ def start_manual_login(
         raise ManualLoginUnavailable("Save a complete flow before starting manual login")
     jobs = JobRepo(session)
     latest = jobs.latest("manual_login", supplier_id)
+    if latest is not None:
+        expires_at = datetime.fromisoformat(str(latest.payload["expires_at"]))
+        if latest.state in {"queued", "running"} and expires_at <= now:
+            jobs.set_result(latest.id, "expired")
+            latest = jobs.latest("manual_login", supplier_id)
     if latest is not None and latest.state in {"queued", "running"}:
         return _manual_view(latest, browser_url)
     expires_at = now + timedelta(minutes=10)
@@ -266,11 +274,17 @@ def start_manual_login(
 
 
 def get_manual_login(
-    session: Session, box: SecretBox, supplier_id: int, browser_url: str
+    session: Session, box: SecretBox, now: datetime, supplier_id: int, browser_url: str
 ) -> ManualLoginView | None:
     """Return the newest manual-login attempt for a Supplier."""
     _record(session, box, supplier_id)
-    job = JobRepo(session).latest("manual_login", supplier_id)
+    jobs = JobRepo(session)
+    job = jobs.latest("manual_login", supplier_id)
+    if job is not None:
+        expires_at = datetime.fromisoformat(str(job.payload["expires_at"]))
+        if job.state in {"queued", "running"} and expires_at <= now:
+            jobs.set_result(job.id, "expired")
+            job = jobs.latest("manual_login", supplier_id)
     return None if job is None else _manual_view(job, browser_url)
 
 

@@ -69,6 +69,45 @@ def test_manual_login_expires_without_saving_a_session(
     assert SessionCookiesRepo(w.session, w.supplier_id, w.now).get() is None
 
 
+def test_cancelled_session_stops_even_if_a_replacement_is_queued(
+    make_world: Callable[..., World],
+) -> None:
+    w = make_world(variants=1)
+    w.page.visible.discard(".me")
+    expires = (w.now() + timedelta(minutes=10)).isoformat()
+    jobs = JobRepo(w.session)
+    jobs.enqueue(
+        "manual_login", w.supplier_id,
+        {"manual_state": "queued", "expires_at": expires}, w.now(), w.now(),
+    )
+    job = jobs.claim_next(w.now(), kinds={"manual_login"})
+    assert job is not None
+    original_sleep = w.clock.sleep
+    sleeps = 0
+
+    def cancel_then_replace(seconds: float) -> None:
+        nonlocal sleeps
+        sleeps += 1
+        if sleeps == 1:
+            with w.deps.session_factory() as session:
+                repo = JobRepo(session)
+                repo.set_result(job.id, "cancelled")
+                repo.enqueue(
+                    "manual_login", w.supplier_id,
+                    {"manual_state": "queued", "expires_at": expires}, w.now(), w.now(),
+                )
+            w.page.visible.add(".me")
+        original_sleep(seconds)
+
+    w.clock.sleep = cancel_then_replace  # type: ignore[method-assign]
+    with w.deps.session_factory() as session:
+        handle_manual_login(w.deps, session, job)
+
+    status = jobs.status(job.id)
+    assert sleeps == 1
+    assert status is not None and status.payload["manual_state"] == "cancelled"
+
+
 def test_the_manual_worker_claims_only_manual_login(make_world: Callable[..., World]) -> None:
     w = make_world(variants=1)
     expires = (w.now() + timedelta(minutes=10)).isoformat()

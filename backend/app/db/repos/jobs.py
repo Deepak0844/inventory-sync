@@ -88,6 +88,13 @@ class JobRepo:
             job.id, job.state, dict(job.payload), job.last_error
         )
 
+    def status(self, job_id: int) -> JobStatus | None:
+        """Return fresh status for one claimed job."""
+        job = self._s.get(Job, job_id, populate_existing=True)
+        return None if job is None else JobStatus(
+            job.id, job.state, dict(job.payload), job.last_error
+        )
+
     def set_result(self, job_id: int, state: str, **payload: Any) -> None:
         """Update manual progress, completing terminal states."""
         job = self._s.get(Job, job_id)

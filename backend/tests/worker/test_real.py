@@ -1,11 +1,17 @@
 from collections.abc import Callable
+from types import SimpleNamespace
+from typing import Any
 
 import httpx
+import pytest
+from playwright.sync_api import Error
 
 from app.db.repos.jobs import JobRecord
 from app.db.repos.notifications import NotificationRepo
 from app.db.repos.settings import SettingsRecord, SettingsSecrets
+from app.flows.page import PageError
 from app.shopify.client import ShopifyError
+from app.worker import real
 from app.worker.real import RealShopifyFactory, imap_fetch
 from app.worker.sync import handle_sync_variants
 from tests.fakes import FakeClock
@@ -62,5 +68,22 @@ def test_the_mailbox_is_only_available_with_all_three_settings() -> None:
     assert imap_fetch(settings(), SettingsSecrets(None, None)) is None
     no_host = SettingsRecord("s", "c", True, "", "u", True, 0.3, 20, 6, 5)
     assert imap_fetch(no_host, SettingsSecrets(None, "pw")) is None
+
+
+def test_visible_browser_startup_failure_is_a_page_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    class BrokenPlaywright:
+        def __enter__(self) -> Any:
+            def fail(**_kwargs: Any) -> None:
+                raise Error("display is unavailable")
+
+            return SimpleNamespace(chromium=SimpleNamespace(launch=fail))
+
+        def __exit__(self, *_args: Any) -> None:
+            pass
+
+    monkeypatch.setattr(real, "sync_playwright", BrokenPlaywright)
+    with pytest.raises(PageError, match="visible browser"):
+        with real.visible_chromium():
+            pass
 
 

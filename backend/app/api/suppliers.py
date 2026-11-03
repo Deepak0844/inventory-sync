@@ -158,14 +158,14 @@ def start_manual_login(
 
 @router.get("/suppliers/{supplier_id}/manual-login", response_model=ManualLoginStatusOut)
 def get_manual_login(
-    supplier_id: int, request: Request, session: Db, box: Box
+    supplier_id: int, request: Request, session: Db, box: Box, now: Now
 ) -> ManualLoginStatusOut:
     """Read the current private-browser login status."""
     if not request.app.state.manual_browser_enabled:
         return ManualLoginStatusOut(enabled=False, session=None)
     try:
         current = service.get_manual_login(
-            session, box, supplier_id, str(request.app.state.manual_browser_url)
+            session, box, now, supplier_id, str(request.app.state.manual_browser_url)
         )
     except service.SupplierNotFound:
         raise NOT_FOUND from None

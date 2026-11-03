@@ -42,6 +42,9 @@ def handle_manual_login(deps: Deps, session: Session, job: JobRecord) -> None:
             browser.page.goto(urljoin(supplier.site_url, flow.login_path))
             jobs.set_result(job.id, "ready")
             while True:
+                current = jobs.status(job.id)
+                if current is None or current.payload.get("manual_state") == "cancelled":
+                    return
                 if browser.page.is_visible(flow.logged_in_marker):
                     store.save(browser.storage_state_json())
                     suppliers.update(
@@ -49,9 +52,6 @@ def handle_manual_login(deps: Deps, session: Session, job: JobRecord) -> None:
                         failed_login_attempts=0,
                     )
                     jobs.set_result(job.id, "succeeded")
-                    return
-                current = jobs.latest("manual_login", supplier.id)
-                if current is None or current.payload.get("manual_state") == "cancelled":
                     return
                 if deps.now() >= expires_at:
                     jobs.set_result(job.id, "expired")

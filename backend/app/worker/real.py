@@ -8,10 +8,11 @@ from contextlib import contextmanager
 from datetime import timedelta
 
 import httpx
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import Error, sync_playwright
 
 from app.core.clock import Clock
 from app.db.repos.settings import SettingsRecord, SettingsSecrets
+from app.flows.page import PageError
 from app.flows.playwright_session import PlaywrightSupplierSession
 from app.mail.codes import MailMessage
 from app.mail.imap import ImapMailbox
@@ -95,9 +96,12 @@ def chromium() -> Iterator[PlaywrightSupplierSession]:
 def visible_chromium() -> Iterator[PlaywrightSupplierSession]:
     """A headed Chromium shown on the container's private X display."""
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=False)
         try:
-            with PlaywrightSupplierSession(browser) as session:
-                yield session
-        finally:
-            browser.close()
+            browser = playwright.chromium.launch(headless=False)
+            try:
+                with PlaywrightSupplierSession(browser) as session:
+                    yield session
+            finally:
+                browser.close()
+        except Error as exc:
+            raise PageError("the visible browser could not start or continue") from exc

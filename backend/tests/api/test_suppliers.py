@@ -181,6 +181,44 @@ def test_manual_login_needs_the_private_browser_and_a_complete_flow(auth: TestCl
     assert "complete flow" in unavailable.text.lower()
 
 
+def test_a_crashed_manual_browser_expires_and_can_be_started_again(
+    auth: TestClient, clock: Clock,
+) -> None:
+    from tests.fakes import sample_flow_dict
+
+    app: Any = auth.app
+    app.state.manual_browser_enabled = True
+    s = add(auth)
+    assert auth.put(f"/api/suppliers/{s['id']}/flow", json=sample_flow_dict()).status_code == 200
+    url = f"/api/suppliers/{s['id']}/manual-login"
+    assert auth.post(url).json()["id"] == 1
+    clock.advance(minutes=11)
+    expired = auth.get(url).json()["session"]
+    assert expired["state"] == "expired"
+    assert auth.post(url).json()["id"] == 2
+
+
+def test_a_manual_worker_startup_failure_is_shown_and_can_be_retried(
+    auth: TestClient, factory: sessionmaker[Session],
+) -> None:
+    from tests.fakes import sample_flow_dict
+
+    app: Any = auth.app
+    app.state.manual_browser_enabled = True
+    s = add(auth)
+    assert auth.put(f"/api/suppliers/{s['id']}/flow", json=sample_flow_dict()).status_code == 200
+    url = f"/api/suppliers/{s['id']}/manual-login"
+    assert auth.post(url).status_code == 201
+    with factory() as session:
+        session.execute(
+            text("UPDATE jobs SET state = 'failed', last_error = 'browser could not start'")
+        )
+        session.commit()
+    failed = auth.get(url).json()["session"]
+    assert (failed["state"], failed["error"]) == ("failed", "browser could not start")
+    assert auth.post(url).json()["id"] == 2
+
+
 def test_a_second_click_still_answers_202_but_queues_nothing_more(
     auth: TestClient, factory: sessionmaker[Session]
 ) -> None:
