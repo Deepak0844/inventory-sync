@@ -80,6 +80,7 @@ class Supplier(Base):
     username_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     password_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     flow_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    flow_draft_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     session_cookies_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     session_saved_at: Mapped[datetime | None] = mapped_column(Timestamp, nullable=True)
     paused: Mapped[bool] = mapped_column(Boolean, default=False)

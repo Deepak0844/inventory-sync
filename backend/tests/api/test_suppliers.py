@@ -95,6 +95,28 @@ def test_a_valid_flow_round_trips(auth: TestClient) -> None:
     assert auth.get(url).json()["supplier"] == "supplier-a"
 
 
+def test_an_incomplete_draft_is_saved_without_replacing_the_runnable_flow(
+    auth: TestClient, factory: sessionmaker[Session]
+) -> None:
+    from tests.fakes import sample_flow_dict
+
+    s = add(auth)
+    url = f"/api/suppliers/{s['id']}/flow"
+    runnable = sample_flow_dict()
+    assert auth.put(url, json=runnable).status_code == 200
+    draft = sample_flow_dict()
+    draft["nodes"] = draft["nodes"][:-2]
+    draft["edges"] = draft["edges"][:-2]
+    assert auth.put(url, json=draft).status_code == 200
+    assert auth.get(url).json()["nodes"][-1]["id"] == "n8"
+    with factory() as session:
+        active, stored_draft = session.execute(
+            text("SELECT flow_json, flow_draft_json FROM suppliers WHERE id = :id"), {"id": s["id"]}
+        ).one()
+    assert active["nodes"][-1]["id"] == "n10"
+    assert stored_draft["nodes"][-1]["id"] == "n8"
+
+
 def test_an_invalid_graph_returns_the_validator_message(auth: TestClient) -> None:
     from tests.fakes import sample_flow_dict
 

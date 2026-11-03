@@ -116,13 +116,24 @@ class SupplierRepo:
                            self._box.decrypt(supplier.password_enc))
 
     def set_flow(self, supplier_id: int, flow: dict[str, Any]) -> None:
-        """Store the flow definition JSON (validated by the caller)."""
-        self._get(supplier_id).flow_json = flow
+        """Activate a runnable flow and remove any older draft."""
+        supplier = self._get(supplier_id)
+        supplier.flow_json = flow
+        supplier.flow_draft_json = None
+        self._s.commit()
+
+    def set_flow_draft(self, supplier_id: int, flow: dict[str, Any]) -> None:
+        """Store an incomplete editor draft without replacing the runnable flow."""
+        self._get(supplier_id).flow_draft_json = flow
         self._s.commit()
 
     def get_flow(self, supplier_id: int) -> dict[str, Any] | None:
-        """Return the flow definition JSON, or None."""
+        """Return the active runnable flow, or None."""
         return self._get(supplier_id).flow_json
+
+    def get_flow_draft(self, supplier_id: int) -> dict[str, Any] | None:
+        """Return the editor draft, or None."""
+        return self._get(supplier_id).flow_draft_json
 
     def _get(self, supplier_id: int) -> Supplier:
         supplier = self._s.get(Supplier, supplier_id)

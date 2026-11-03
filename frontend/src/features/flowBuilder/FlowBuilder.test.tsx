@@ -119,14 +119,35 @@ it("puts back the saved flow on Revert", async () => {
   expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
 });
 
-it("blocks Save and counts the problems while the flow is not valid", async () => {
+it("counts the problems that prevent the flow from running", async () => {
   const flow = sampleFlow();
   (flow.nodes[3] as { selector: string }).selector = "";
   serve(flow as never);
   open();
-  expect(await screen.findByText("Fix 1 problem to save")).toBeInTheDocument();
+  expect(await screen.findByText("Fix 1 problem before this flow can run")).toBeInTheDocument();
   expect(screen.getByText("Pick or enter a selector.")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+});
+
+it("saves a completed step as a draft while the rest of the flow is incomplete", async () => {
+  const flow = sampleFlow();
+  flow.nodes = flow.nodes.slice(0, -2);
+  flow.edges = flow.edges.slice(0, -2);
+  serve(flow as never);
+  let sent: unknown;
+  server.use(http.put(`${API}/suppliers/1/flow`, async ({ request }) => {
+    sent = await request.json();
+    return HttpResponse.json(sent as Record<string, unknown>);
+  }));
+  open();
+  fireEvent.click(await screen.findByText("button[type=submit]"));
+  await userEvent.type(screen.getByLabelText("Selector"), "x");
+  const save = screen.getByRole("button", { name: "Save changes" });
+  expect(save).toBeEnabled();
+  await userEvent.click(save);
+  expect(await screen.findByText(/Draft saved/)).toBeInTheDocument();
+  expect((sent as { nodes: Array<{ id: string; selector?: string }> }).nodes)
+    .toContainEqual(expect.objectContaining({ id: "n4", selector: "button[type=submit]x" }));
 });
 
 it("adds a step from the palette, connected after the last one", async () => {

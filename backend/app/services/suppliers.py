@@ -178,29 +178,36 @@ def credentials_status(
 
 
 def get_flow(session: Session, box: SecretBox, supplier_id: int) -> dict[str, Any] | None:
-    """Return the stored flow JSON, or None if the Supplier has none yet."""
+    """Return the editor draft first, otherwise the active flow."""
     _record(session, box, supplier_id)
-    return SupplierRepo(session, box).get_flow(supplier_id)
+    repo = SupplierRepo(session, box)
+    return repo.get_flow_draft(supplier_id) or repo.get_flow(supplier_id)
 
 
 def save_flow(
     session: Session, box: SecretBox, supplier_id: int, data: dict[str, Any]
 ) -> dict[str, Any]:
-    """Validate and store a flow definition.
+    """Store an incomplete editor draft, or promote a runnable definition.
 
     Raises:
         SupplierNotFound: for an unknown id.
-        FlowInvalid: with one message per problem; nothing is saved.
+        FlowInvalid: when even the draft is malformed; nothing is saved.
     """
     _record(session, box, supplier_id)
     try:
-        flow = FlowDefinition.model_validate(data)
+        flow = FlowDefinition.model_validate(data, context={"draft": True})
     except ValidationError as exc:
         raise FlowInvalid(
             [f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}".lstrip(": ") for e in exc.errors()]
         ) from exc
     stored = flow.model_dump(mode="json")
-    SupplierRepo(session, box).set_flow(supplier_id, stored)
+    repo = SupplierRepo(session, box)
+    try:
+        FlowDefinition.model_validate(stored)
+    except ValidationError:
+        repo.set_flow_draft(supplier_id, stored)
+    else:
+        repo.set_flow(supplier_id, stored)
     return stored
 
 
