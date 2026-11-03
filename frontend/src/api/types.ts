@@ -35,7 +35,9 @@ export interface SupplierCredentials {
 
 export interface ManualLogin {
   id: number;
-  state: "queued" | "ready" | "succeeded" | "failed" | "expired" | "cancelled";
+  state:
+    | "queued" | "ready" | "finishing" | "verifying"
+    | "succeeded" | "failed" | "expired" | "cancelled";
   expires_at: string;
   browser_url: string;
   error: string | null;

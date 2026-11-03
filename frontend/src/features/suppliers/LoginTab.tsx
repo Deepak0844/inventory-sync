@@ -3,7 +3,8 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import {
-  useCancelManualLoginMutation, useCredentialsQuery, useManualLoginStatusQuery,
+  useCancelManualLoginMutation, useCredentialsQuery, useFinishManualLoginMutation,
+  useManualLoginStatusQuery,
   useRetrySupplierMutation, useSetCredentialsMutation, useStartLoginMutation,
   useStartManualLoginMutation,
 } from "../../api/api";
@@ -22,7 +23,8 @@ type Values = z.infer<typeof schema>;
 
 const METHOD_NAMES = { ui_code: "Pasted code", email_code: "Mailbox code" } as const;
 
-const OPEN_STATES = new Set<ManualLogin["state"]>(["queued", "ready"]);
+const OPEN_STATES = new Set<ManualLogin["state"]>(["queued", "ready", "finishing", "verifying"]);
+const CHECKING_STATES = new Set<ManualLogin["state"]>(["finishing", "verifying"]);
 
 function ManualLoginControl({ supplierId }: { supplierId: number }) {
   const status = useManualLoginStatusQuery(supplierId, {
@@ -30,6 +32,7 @@ function ManualLoginControl({ supplierId }: { supplierId: number }) {
     skipPollingIfUnfocused: true,
   });
   const [start, starting] = useStartManualLoginMutation();
+  const [finish, finishing] = useFinishManualLoginMutation();
   const [cancel, cancelling] = useCancelManualLoginMutation();
   const attempt = status.data?.session;
 
@@ -49,7 +52,8 @@ function ManualLoginControl({ supplierId }: { supplierId: number }) {
       {attempt?.state === "ready" ? (
         <div className="flex flex-col gap-2">
           <p role="status" className="text-small">
-            Browser ready. Make sure your SSH tunnel is open, then finish the login before this session expires.
+            Browser ready. Make sure your SSH tunnel is open, log in and solve the CAPTCHA there,
+            then press Done before this session expires. Closing the browser window also counts as Done.
           </p>
           <div className="flex flex-wrap gap-2">
             <a
@@ -61,6 +65,12 @@ function ManualLoginControl({ supplierId }: { supplierId: number }) {
               Open private browser
             </a>
             <Button
+              disabled={finishing.isLoading}
+              onClick={() => void finish(supplierId)}
+            >
+              Done, I'm logged in
+            </Button>
+            <Button
               look="secondary"
               disabled={cancelling.isLoading}
               onClick={() => void cancel(supplierId)}
@@ -70,6 +80,9 @@ function ManualLoginControl({ supplierId }: { supplierId: number }) {
           </div>
         </div>
       ) : null}
+      {attempt && CHECKING_STATES.has(attempt.state) ? (
+        <p role="status" className="text-small">Checking your login…</p>
+      ) : null}
       {attempt?.state === "succeeded" ? (
         <FormMessage kind="ok">Manual login saved. Scheduled runs can reuse this session.</FormMessage>
       ) : null}
@@ -78,7 +91,7 @@ function ManualLoginControl({ supplierId }: { supplierId: number }) {
           {attempt.error || (attempt.state === "expired" ? "The manual login expired." : "The manual login failed.")}
         </FormMessage>
       ) : null}
-      {starting.isError || cancelling.isError || status.isError ? (
+      {starting.isError || finishing.isError || cancelling.isError || status.isError ? (
         <FormMessage kind="error">Couldn't update the manual login. Try again.</FormMessage>
       ) : null}
       {canStart ? (
@@ -92,7 +105,8 @@ function ManualLoginControl({ supplierId }: { supplierId: number }) {
           </Button>
         </div>
       ) : null}
-      {attempt && OPEN_STATES.has(attempt.state) && attempt.state !== "ready" ? (
+      {attempt && OPEN_STATES.has(attempt.state) && attempt.state !== "ready" &&
+        !CHECKING_STATES.has(attempt.state) ? (
         <div>
           <Button
             look="text"

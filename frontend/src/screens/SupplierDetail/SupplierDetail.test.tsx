@@ -205,6 +205,56 @@ describe("Login and 2FA tab", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Cancel manual login" }));
     await waitFor(() => expect(cancelled).toBe(true));
   });
+
+  const manualSession = (state: string, error: string | null = null) => ({
+    enabled: true,
+    session: {
+      id: 9,
+      state,
+      expires_at: "2026-11-03T12:10:00Z",
+      browser_url: "http://127.0.0.1:6080/vnc.html",
+      error,
+    },
+  });
+
+  it("tells the worker the login is finished when you press Done", async () => {
+    let finished = false;
+    open();
+    server.use(
+      http.get(`${API}/suppliers/1/manual-login`, () => HttpResponse.json(manualSession("ready"))),
+      http.post(`${API}/suppliers/1/manual-login/finish`, () => {
+        finished = true;
+        return new HttpResponse(null, { status: 202 });
+      }),
+    );
+    await userEvent.click(await screen.findByRole("tab", { name: "Login and 2FA" }));
+    expect(await screen.findByText(/press Done/)).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: "Done, I'm logged in" }));
+    await waitFor(() => expect(finished).toBe(true));
+  });
+
+  it.each(["finishing", "verifying"])("shows that the login is being checked while %s", async (state) => {
+    open();
+    server.use(
+      http.get(`${API}/suppliers/1/manual-login`, () => HttpResponse.json(manualSession(state))),
+    );
+    await userEvent.click(await screen.findByRole("tab", { name: "Login and 2FA" }));
+    expect(await screen.findByText(/Checking your login/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Done, I'm logged in" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Manual login/ })).not.toBeInTheDocument();
+  });
+
+  it("shows why the check failed and offers another try", async () => {
+    open();
+    server.use(
+      http.get(`${API}/suppliers/1/manual-login`, () =>
+        HttpResponse.json(manualSession("failed", "Not logged in: press Done after login")),
+      ),
+    );
+    await userEvent.click(await screen.findByRole("tab", { name: "Login and 2FA" }));
+    expect(await screen.findByText(/Not logged in: press Done after login/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Manual login again" })).toBeInTheDocument();
+  });
 });
 
 it("lists runs and can start a check now", async () => {

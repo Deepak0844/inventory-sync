@@ -88,6 +88,10 @@ export const api = createApi({
       query: (id) => ({ url: `/suppliers/${id}/manual-login`, method: "POST" }),
       invalidatesTags: (_r, _e, id) => [{ type: "ManualLogin", id }],
     }),
+    finishManualLogin: b.mutation<void, number>({
+      query: (id) => ({ url: `/suppliers/${id}/manual-login/finish`, method: "POST" }),
+      invalidatesTags: (_r, _e, id) => [{ type: "ManualLogin", id }],
+    }),
     cancelManualLogin: b.mutation<void, number>({
       query: (id) => ({ url: `/suppliers/${id}/manual-login`, method: "DELETE" }),
       invalidatesTags: (_r, _e, id) => [{ type: "ManualLogin", id }],
@@ -193,7 +197,8 @@ export const {
   useSuppliersQuery, useSupplierQuery, useAddSupplierMutation, useUpdateSupplierMutation,
   useDeleteSupplierMutation, useCredentialsQuery, useSetCredentialsMutation, useFlowQuery,
   useSetFlowMutation, useStartLoginMutation, useRetrySupplierMutation, useCheckSupplierMutation,
-  useManualLoginStatusQuery, useStartManualLoginMutation, useCancelManualLoginMutation,
+  useManualLoginStatusQuery, useStartManualLoginMutation, useFinishManualLoginMutation,
+  useCancelManualLoginMutation,
   useStartTestRunMutation, useTestRunQuery, useRunsQuery, usePendingCodesQuery, useSubmitCodeMutation, useListingsQuery,
   useImportListingsMutation, useVariantsQuery, useMappingsQuery, useSetMappingsMutation,
   useApprovalsQuery, useApproveMutation, useRejectMutation, useNotificationsQuery,
