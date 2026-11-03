@@ -157,9 +157,12 @@ export function SelectorPicker({ snapshot, onPick, avoidText = false, targetLabe
               {targetLabel === null ? NO_TARGET : `Your next click fills: ${targetLabel}`}
             </p>
           )}
-          <p role="status" className={`text-small ${hover === null && picked ? "font-semibold text-positive" : "text-muted"}`}>
-            {hover ?? (picked ? <Picked pick={picked} /> : DEFAULT_HINT)}
-          </p>
+          {picked ? (
+            <p role="status" className="text-small font-semibold text-positive">
+              <Picked pick={picked} />
+            </p>
+          ) : null}
+          <p className="text-small text-muted">{hover ?? DEFAULT_HINT}</p>
           <iframe
             title="Page snapshot"
             sandbox="allow-same-origin"
