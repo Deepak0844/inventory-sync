@@ -316,9 +316,8 @@ def finish_manual_login(session: Session, box: SecretBox, supplier_id: int) -> N
     _record(session, box, supplier_id)
     jobs = JobRepo(session)
     job = jobs.latest("manual_login", supplier_id)
-    if job is None or job.payload.get("manual_state") != "ready":
+    if job is None or not jobs.advance(job.id, {"ready"}, "finishing"):
         raise ManualLoginNotReady("Wait until the private browser is ready, then press Done")
-    jobs.set_result(job.id, "finishing")
 
 
 def retry_supplier(session: Session, box: SecretBox, now: datetime, supplier_id: int) -> None:

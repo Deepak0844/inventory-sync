@@ -188,6 +188,7 @@ class FakeProfileBrowser:
         self.opened: list[Path] = []
         self.error: PageError | None = None
         self.cookie_domains = [".supplier.test"]
+        self.on_open: Callable[[], None] | None = None
 
     @contextmanager
     def __call__(self, profile_dir: Path) -> Iterator[FakeBrowserSession]:
@@ -195,6 +196,8 @@ class FakeProfileBrowser:
             raise self.error
         self.opened.append(profile_dir)
         self.events.append("profile opened")
+        if self.on_open is not None:
+            self.on_open()
         session = FakeBrowserSession(self.page)
         cookies = [{"name": "session", "value": "x", "domain": d} for d in self.cookie_domains]
         session.storage_state_json = lambda: json.dumps(  # type: ignore[method-assign]

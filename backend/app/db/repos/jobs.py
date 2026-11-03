@@ -96,14 +96,53 @@ class JobRepo:
         )
 
     def set_result(self, job_id: int, state: str, **payload: Any) -> None:
-        """Update manual progress, completing terminal states."""
-        job = self._s.get(Job, job_id)
+        """Set manual progress whatever the job says now, completing terminal states.
+
+        For a change that must not overwrite what someone else just set (the worker's progress
+        against a Cancel from the API), use `advance`.
+        """
+        job = self._s.get(Job, job_id, with_for_update=True, populate_existing=True)
         if job is None:
             return
+        self._write(job, state, payload)
+        self._s.commit()
+
+    def advance(
+        self, job_id: int, expected: set[str], state: str, **payload: Any
+    ) -> bool:
+        """Move a manual job to `state` only if it is in one of the `expected` states.
+
+        The row is locked while it is read and written, so the API and the worker cannot
+        overwrite each other: a worker that finds the owner already cancelled gets False and
+        must stop. Returns whether the change was made.
+        """
+        job = self._s.get(Job, job_id, with_for_update=True, populate_existing=True)
+        if job is None or str(job.payload.get("manual_state", "queued")) not in expected:
+            self._s.rollback()  # release the row lock
+            return False
+        self._write(job, state, payload)
+        self._s.commit()
+        return True
+
+    def abandon_running(self, kind: str, error: str) -> int:
+        """End every running job of this kind as failed with `error`. Returns how many.
+
+        For a worker that runs one such job at a time: when it starts, any job still running
+        belongs to a predecessor that died, so nobody is waiting on it any more.
+        """
+        jobs = self._s.scalars(
+            select(Job).where(Job.kind == kind, Job.state == "running").with_for_update()
+        ).all()
+        for job in jobs:
+            self._write(job, "failed", {"error": error})
+        self._s.commit()
+        return len(jobs)
+
+    @staticmethod
+    def _write(job: Job, state: str, payload: dict[str, Any]) -> None:
         job.payload = {**dict(job.payload), "manual_state": state, **payload}
         if state in {"succeeded", "failed", "expired", "cancelled"}:
             job.state, job.locked_at = "done", None
-        self._s.commit()
 
     def complete(self, job_id: int) -> None:
         """Mark a job done."""

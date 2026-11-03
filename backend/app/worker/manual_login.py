@@ -24,6 +24,8 @@ from app.flows.page import PageError
 from app.flows.session_store import EncryptedSessionStore
 from app.worker.deps import Deps
 
+OPEN_STATES = {"queued", "ready", "finishing", "verifying"}
+ABANDONED = "The private browser stopped unexpectedly. Start again."
 NOT_LOGGED_IN = (
     "Not logged in: the account page did not show you as signed in. "
     "Start again and press Done only after the login has finished."
@@ -61,9 +63,19 @@ def handle_manual_login(deps: Deps, session: Session, job: JobRecord) -> None:
         if _wait_for_owner(deps, jobs, job, supplier, flow, profile_dir):
             _save_if_logged_in(deps, session, jobs, job, supplier, flow, profile_dir)
     except (DecryptionError, PageError, ValueError, OSError) as exc:
-        jobs.set_result(job.id, "failed", error=_with_cause(exc))
+        jobs.advance(job.id, OPEN_STATES, "failed", error=_with_cause(exc))
     finally:
         shutil.rmtree(profile_dir, ignore_errors=True)
+
+
+def recover_abandoned(session: Session) -> int:
+    """End a manual login that a crashed or restarted worker left running. Returns how many.
+
+    Call once when the manual worker starts: it runs one login at a time, so anything still
+    running then has no browser and no one watching it, and would otherwise show a dead
+    "ready" browser until it expired.
+    """
+    return JobRepo(session).abandon_running("manual_login", ABANDONED)
 
 
 def _wait_for_owner(
@@ -72,21 +84,23 @@ def _wait_for_owner(
 ) -> bool:
     """Keep the browser open until the owner finishes. True when they did.
 
-    Returns False after recording `cancelled` was seen or `expired`; the browser is closed
-    either way when this returns.
+    Returns False when the login ended some other way (cancelled, or expired by the API or
+    the clock); the browser is closed either way when this returns.
     """
     assert deps.manual_browser is not None
     expires_at = datetime.fromisoformat(str(job.payload["expires_at"]))
     with deps.manual_browser(profile_dir, urljoin(supplier.site_url, flow.login_path)) as browser:
-        jobs.set_result(job.id, "ready")
+        if not jobs.advance(job.id, {"queued"}, "ready"):
+            return False
         while True:
             current = jobs.status(job.id)
-            if current is None or current.payload.get("manual_state") == "cancelled":
-                return False
-            if current.payload.get("manual_state") == "finishing" or not browser.is_running():
+            state = None if current is None else current.payload.get("manual_state")
+            if state == "finishing" or (state == "ready" and not browser.is_running()):
                 return True
+            if state != "ready":  # cancelled, expired by the API, or anything else that ended it
+                return False
             if deps.now() >= expires_at:
-                jobs.set_result(job.id, "expired")
+                jobs.advance(job.id, {"ready"}, "expired")
                 return False
             deps.clock.sleep(deps.poll_s)
 
@@ -96,7 +110,8 @@ def _save_if_logged_in(
     flow: FlowDefinition, profile_dir: Path,
 ) -> None:
     assert deps.profile_browser is not None
-    jobs.set_result(job.id, "verifying")
+    if not jobs.advance(job.id, {"ready", "finishing"}, "verifying"):
+        return  # cancelled or ended in the meantime
     with deps.profile_browser(profile_dir) as browser:
         browser.page.goto(flow.logged_in_url)
         state = _supplier_cookies_only(browser.storage_state_json(), supplier.site_url)
@@ -105,13 +120,14 @@ def _save_if_logged_in(
             # The page and cookie count tell a wrong logged-in URL from a login that did not stick.
             detail = (f"Opened {browser.page.url or flow.logged_in_url} with {count} "
                       f"cookie{'' if count == 1 else 's'} from the browser.")
-            jobs.set_result(job.id, "failed", error=f"{NOT_LOGGED_IN} {detail}")
+            jobs.advance(job.id, {"verifying"}, "failed", error=f"{NOT_LOGGED_IN} {detail}")
             return
+    if not jobs.advance(job.id, {"verifying"}, "succeeded"):
+        return  # cancelled while checking: the owner does not want this session saved
     EncryptedSessionStore(
         deps.box, SessionCookiesRepo(session, supplier.id, deps.now)).save(state)
     SupplierRepo(session, deps.box).update(
         supplier.id, blocked=False, paused=False, pause_reason=None, failed_login_attempts=0)
-    jobs.set_result(job.id, "succeeded")
 
 
 def _supplier_cookies_only(state_json: str, site_url: str) -> str:

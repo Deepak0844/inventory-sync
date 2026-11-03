@@ -11,7 +11,7 @@ from app.db.repos.suppliers import SessionCookiesRepo, SupplierRepo
 from app.flows.page import PageError
 from app.flows.session_store import EncryptedSessionStore
 from app.worker.jobs import run_once
-from app.worker.manual_login import handle_manual_login
+from app.worker.manual_login import handle_manual_login, recover_abandoned
 from tests.worker.conftest import BASE, World
 
 LOGIN_URL = f"{BASE}/login"
@@ -220,3 +220,55 @@ def test_a_failed_check_says_which_page_it_opened_and_how_many_cookies_it_had(
     _, error = outcome(w)
     assert error is not None
     assert "http://supplier.test/account" in error and "1 cookie" in error
+
+
+def test_a_session_the_api_already_ended_stops_the_browser_at_once(
+    make_world: Callable[..., World],
+) -> None:
+    """The API marks a login expired itself; the worker must not wait for its own clock."""
+    w = make_world(variants=1)
+    w.manual.stays_open = True
+    job = start(w)
+    waits: list[int] = []
+
+    def api_expires_it(wait: int) -> None:
+        waits.append(wait)
+        ask(w, job, "expired")
+
+    run(w, job, api_expires_it)
+    assert waits == [1]
+    assert outcome(w)[0] == "expired"
+    assert w.events == ["browser started", "browser stopped"]
+
+
+def test_cancelling_while_the_login_is_being_checked_saves_nothing(
+    make_world: Callable[..., World],
+) -> None:
+    w = make_world(variants=1)
+    old = saved(w)
+    job = start(w)
+    w.profile.on_open = lambda: ask(w, job, "cancelled")
+    run(w, job)
+    assert outcome(w)[0] == "cancelled"
+    assert saved(w) == old
+
+
+def test_a_worker_that_restarts_ends_the_login_its_predecessor_left_running(
+    make_world: Callable[..., World],
+) -> None:
+    w = make_world(variants=1)
+    job = start(w)  # claimed and running, as if the worker died in the middle of it
+    queued = JobRepo(w.session).enqueue(
+        "manual_login", w.supplier_id,
+        {"manual_state": "queued", "expires_at": w.now().isoformat()}, w.now(), w.now())
+    with w.deps.session_factory() as session:
+        assert recover_abandoned(session) == 1
+    state, error = outcome_of(w, job.id)
+    assert state == "failed" and error is not None and "stopped unexpectedly" in error
+    assert JobRepo(w.session).status(queued).state == "queued"  # type: ignore[union-attr]
+
+
+def outcome_of(w: World, job_id: int) -> tuple[str, str | None]:
+    status = JobRepo(w.session).status(job_id)
+    assert status is not None
+    return str(status.payload["manual_state"]), status.payload.get("error")

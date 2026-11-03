@@ -2,8 +2,9 @@
 
 Chromium keeps cookies that have no expiry on disk but throws them away when the profile is
 opened again, and many Supplier logins use exactly those. So the cookie file is read
-directly. Only Linux Chromium with `--password-store=basic` is supported: that store uses a
-fixed key, which is why no keyring is needed. Not responsible for starting the browser
+directly (`Default/Network/Cookies` in newer Chromium, `Default/Cookies` before). Only
+Linux Chromium with `--password-store=basic` is supported: that store uses a fixed key,
+which is why no keyring is needed. Not responsible for starting the browser
 (`app.worker.real`) or for deciding whether the login worked.
 """
 
@@ -38,9 +39,10 @@ def read_cookies(profile_dir: Path) -> list[dict[str, Any]]:
     Raises:
         ProfileCookieError: if there is no cookie file or a value cannot be decrypted.
     """
-    path = profile_dir / "Default" / "Cookies"
-    if not path.is_file():
-        raise ProfileCookieError(f"no cookie file in the browser profile ({path.name})")
+    path = next((p for p in (profile_dir / "Default" / "Network" / "Cookies",
+                             profile_dir / "Default" / "Cookies") if p.is_file()), None)
+    if path is None:
+        raise ProfileCookieError("no cookie file in the browser profile")
     try:
         db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
         try:

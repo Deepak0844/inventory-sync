@@ -12,7 +12,7 @@ from app.core.config import get_settings
 from app.core.encryption import SecretBox
 from app.worker.deps import Deps
 from app.worker.jobs import Handler, run_once
-from app.worker.manual_login import handle_manual_login
+from app.worker.manual_login import handle_manual_login, recover_abandoned
 from app.worker.real import (
     RealShopifyFactory,
     chromium,
@@ -44,7 +44,10 @@ def main() -> None:
     stop = threading.Event()
     for signum in (signal.SIGTERM, signal.SIGINT):
         signal.signal(signum, lambda *_: stop.set())
-    logging.getLogger(__name__).info("manual browser worker started")
+    with deps.session_factory() as session:
+        abandoned = recover_abandoned(session)
+    logging.getLogger(__name__).info(
+        "manual browser worker started (%d abandoned login(s) ended)", abandoned)
     while not stop.is_set():
         if not run_once(deps, HANDLERS):
             stop.wait(1.0)

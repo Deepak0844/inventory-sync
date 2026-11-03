@@ -25,9 +25,12 @@ def encrypt(value: str, host: str, with_host_hash: bool = True) -> bytes:
     return b"v10" + encryptor.update(padded) + encryptor.finalize()
 
 
-def profile_with(tmp_path: Path, rows: list[tuple[object, ...]]) -> Path:
-    (tmp_path / "Default").mkdir(parents=True)
-    db = sqlite3.connect(tmp_path / "Default" / "Cookies")
+def profile_with(tmp_path: Path, rows: list[tuple[object, ...]], network: bool = False) -> Path:
+    """A profile with the cookie file where Chromium puts it: `Default/Cookies`, or
+    `Default/Network/Cookies` in newer versions."""
+    folder = tmp_path / "Default" / ("Network" if network else "")
+    folder.mkdir(parents=True)
+    db = sqlite3.connect(folder / "Cookies")
     db.execute(
         "create table cookies (host_key text, name text, value text, encrypted_value blob, "
         "path text, expires_utc integer, is_secure integer, is_httponly integer, "
@@ -90,3 +93,27 @@ def test_a_value_that_cannot_be_decrypted_is_a_named_error(tmp_path: Path) -> No
         ("shop.test", "bad", "", b"v11notreallyencrypted....", "/", 0, 1, 1, 0, 1)])
     with pytest.raises(ProfileCookieError, match="decrypt"):
         read_cookies(profile)
+
+
+def test_newer_chromium_keeps_the_cookie_file_under_network(tmp_path: Path) -> None:
+    profile = profile_with(tmp_path, [
+        (".shop.test", "session", "", encrypt("tok123", ".shop.test"), "/", 0, 1, 1, 0, 1)],
+        network=True)
+    assert [c["value"] for c in read_cookies(profile)] == ["tok123"]
+
+
+def test_the_newer_cookie_file_wins_when_both_exist(tmp_path: Path) -> None:
+    row = (".shop.test", "session", "", encrypt("new", ".shop.test"), "/", 0, 1, 1, 0, 1)
+    old_row = (".shop.test", "session", "", encrypt("old", ".shop.test"), "/", 0, 1, 1, 0, 1)
+    profile_with(tmp_path, [old_row])
+    (tmp_path / "Default" / "Network").mkdir()
+    db = sqlite3.connect(tmp_path / "Default" / "Network" / "Cookies")
+    db.execute(
+        "create table cookies (host_key text, name text, value text, encrypted_value blob, "
+        "path text, expires_utc integer, is_secure integer, is_httponly integer, "
+        "has_expires integer, samesite integer)")
+    db.execute("create table meta (key text, value text)")
+    db.execute("insert into cookies values (?,?,?,?,?,?,?,?,?,?)", row)
+    db.commit()
+    db.close()
+    assert [c["value"] for c in read_cookies(tmp_path)] == ["new"]
