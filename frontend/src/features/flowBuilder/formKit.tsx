@@ -40,7 +40,16 @@ export function SelectorField({ label, field, picking, onPick, error, inputProps
       className={`flex items-end gap-2 rounded-control ${flash ? "bg-pill-positive ring-2 ring-positive" : ""}`}
     >
       <div className="min-w-0 flex-1">
-        <TextField label={label} error={error} {...inputProps} />
+        <TextField
+          label={label}
+          error={error}
+          {...inputProps}
+          onChange={(event) => {
+            void inputProps.onChange?.(event);
+            // Typing the selector yourself answers the pick, so stop waiting for a click.
+            if (active) onPick(field);
+          }}
+        />
       </div>
       <Button
         look="secondary"

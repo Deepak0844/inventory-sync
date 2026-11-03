@@ -80,6 +80,19 @@ it("shows the field that is waiting for a pick as active", () => {
   expect(screen.getByRole("button", { name: "Pick selector for Selector" })).toHaveAttribute("aria-pressed", "true");
 });
 
+it("stops waiting for a pick once the person types the selector themselves", async () => {
+  const p = setup(node("n4"), sampleFlow(), "selector");
+  await userEvent.type(screen.getByLabelText("Selector"), "x");
+  expect(p.onPick).toHaveBeenCalledWith("selector");
+  expect(p.onPick).toHaveBeenCalledTimes(1);
+});
+
+it("does not touch the pick state when typing into a field that is not waiting", async () => {
+  const p = setup(node("n4"));
+  await userEvent.type(screen.getByLabelText("Selector"), "x");
+  expect(p.onPick).not.toHaveBeenCalled();
+});
+
 it("shows the flow settings and the stock rules when no step is selected", async () => {
   const p = setup(null);
   expect(screen.getByLabelText("Login page path")).toHaveValue("/login");

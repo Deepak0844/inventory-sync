@@ -154,7 +154,7 @@ export function SelectorPicker({ snapshot, onPick, avoidText = false, targetLabe
         <>
           {targetLabel === undefined ? null : (
             <p className="text-small font-semibold text-ink">
-              {targetLabel === null ? NO_TARGET : `Picking for: ${targetLabel}`}
+              {targetLabel === null ? NO_TARGET : `Your next click fills: ${targetLabel}`}
             </p>
           )}
           <p role="status" className={`text-small ${hover === null && picked ? "font-semibold text-positive" : "text-muted"}`}>
