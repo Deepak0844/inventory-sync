@@ -54,7 +54,11 @@ def masked_selectors(flow: FlowDefinition) -> list[str]:
     """
     found = [PASSWORD_FIELDS]
     for node in flow.nodes:
-        if isinstance(node, Fill) and (node.mask or _SECRET_VALUE.search(node.value)):
+        # A step still being built has a blank selector, and Playwright refuses to take a
+        # screenshot with a blank mask, which used to drop the whole snapshot.
+        if isinstance(node, Fill) and node.selector.strip() and (
+            node.mask or _SECRET_VALUE.search(node.value)
+        ):
             found.append(node.selector)
     return list(dict.fromkeys(found))
 
@@ -118,6 +122,8 @@ def _save_screenshot(browser: BrowserSession, path: Path, masks: list[str]) -> b
     try:
         path.write_bytes(browser.page.screenshot(masks))
     except PageError:
+        # Never silent: this is why a run could end with no picture and no explanation.
+        log.warning("could not take screenshot %s (masks: %d)", path.name, len(masks))
         return False
     return True
 

@@ -33,7 +33,7 @@ export function starterFlow(supplier: { name: string; site_url: string }): FlowD
     version: 1,
     login_path: "/login",
     logged_in_url: `${base}/account`,
-    blocked_if: { contains: "CAPTCHA" },
+    blocked_if: { contains: "verify you are human" },
     nodes: [
       { id: "n1", type: "goto", url: `${base}/login` },
       { id: "n2", type: "fill", selector: "", value: "{{credentials.username}}" },

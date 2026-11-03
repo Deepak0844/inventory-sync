@@ -97,6 +97,8 @@ class ScriptedPage:
         return selector in self.visible
 
     def inner_text(self, selector: str) -> str:
+        if selector == "body" and "body" not in self.texts:
+            return self.html  # tests that only set `html` treat it as the visible text
         return self.texts[selector]
 
     def content(self) -> str:
