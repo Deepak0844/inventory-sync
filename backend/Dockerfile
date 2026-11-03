@@ -4,7 +4,10 @@ WORKDIR /srv
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 # Chromium for the worker; a fixed path so the non-root user can read it.
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright PATH="/srv/.venv/bin:$PATH"
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    PATH="/srv/.venv/bin:$PATH" \
+    HOME=/home/app \
+    XDG_CONFIG_HOME=/home/app/.config
 RUN playwright install --with-deps chromium
 RUN apt-get update && apt-get install -y --no-install-recommends \
     novnc websockify x11vnc xvfb \
@@ -14,8 +17,8 @@ COPY alembic.ini ./
 COPY alembic ./alembic
 COPY manual-browser-entrypoint.sh /usr/local/bin/manual-browser-entrypoint
 RUN chmod 755 /usr/local/bin/manual-browser-entrypoint \
-    && useradd --system --no-create-home app \
-    && mkdir /srv/data \
-    && chown app /srv/data
+    && useradd --system --create-home --home-dir /home/app app \
+    && mkdir -p /srv/data /home/app/.config \
+    && chown -R app:app /srv/data /home/app
 USER app
 CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000"]
