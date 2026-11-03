@@ -40,3 +40,26 @@ export function summary(node: FlowNode): string {
       return "Keeps the login for the next run";
   }
 }
+
+const PICK_FIELD_LABELS: Record<string, string> = {
+  selector: "Selector",
+  if_visible: "Element to look for",
+};
+const EXTRACT_FIELD_LABELS: Record<string, string> = {
+  stock_selector: "Stock element",
+  quantity_selector: "Quantity element",
+};
+
+/**
+ * Where a picked selector will go, in words: "Fill step, Selector" or "Stock rules, Stock element".
+ * Null when there is nowhere for it to go.
+ */
+export function pickTarget(node: FlowNode | null, field: string | undefined): string | null {
+  if (!field) return null;
+  if (node) {
+    const name = PICK_FIELD_LABELS[field];
+    return name ? `${NODE_LABELS[node.type]} step, ${name}` : null;
+  }
+  const name = EXTRACT_FIELD_LABELS[field];
+  return name ? `Stock rules, ${name}` : null;
+}

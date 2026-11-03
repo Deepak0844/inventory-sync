@@ -15,6 +15,8 @@ import { starterFlow, toFlowDoc } from "./flowDoc";
 import { Inspector } from "./Inspector";
 import { Palette } from "./Palette";
 import { SelectorColumn, type SelectorColumnProps } from "./SelectorColumn";
+import { pickTarget } from "./nodeInfo";
+import { PickFlashContext } from "./pickFlash";
 import type { FlowDoc, NodeType, Validation } from "./types";
 import { useIsPhone } from "./useIsPhone";
 import { attachServerErrors, validateFlow } from "./validate";
@@ -29,6 +31,9 @@ interface EditorProps {
 }
 
 /** The selector field of each step type that has exactly one. */
+/** How long a field that was just filled by a pick stays flagged. */
+const FLASH_MS = 2000;
+
 const ONLY_SELECTOR_FIELD: Partial<Record<NodeType, string>> = {
   fill: "selector",
   click: "selector",
@@ -50,6 +55,7 @@ function Editor({ supplier, initial, startsNew, SelectorPanel }: EditorProps) {
   const [pick, setPick] = useState<{ nodeId: string | null; field: string } | null>(null);
   const [formVersion, setFormVersion] = useState(0);
   const [pickNote, setPickNote] = useState<string | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
 
   const flow = useMemo(() => draftToFlow(draft), [draft]);
   const json = JSON.stringify(flow);
@@ -98,6 +104,12 @@ function Editor({ supplier, initial, startsNew, SelectorPanel }: EditorProps) {
     setPick(null);
     setFormVersion((v) => v + 1);
   };
+  useEffect(() => {
+    if (!flash) return;
+    const timer = setTimeout(() => setFlash(null), FLASH_MS);
+    return () => clearTimeout(timer);
+  }, [flash]);
+
   const onPickSelector = (selector: string) => {
     // A step with one selector field is the obvious target, so it needs no Pick press first.
     const field = picking ?? (selected ? ONLY_SELECTOR_FIELD[selected.type] : undefined);
@@ -109,6 +121,7 @@ function Editor({ supplier, initial, startsNew, SelectorPanel }: EditorProps) {
     else dispatch({ kind: "extract", patch: { [field]: selector } });
     setPick(null);
     setPickNote(null);
+    setFlash(field);
     setFormVersion((v) => v + 1);
   };
 
@@ -162,6 +175,7 @@ function Editor({ supplier, initial, startsNew, SelectorPanel }: EditorProps) {
         {!phone ? (
           <aside className="flex flex-col gap-4">
             <Card>
+              <PickFlashContext.Provider value={flash}>
               <Inspector
                 selected={selected}
                 meta={draft.meta}
@@ -173,6 +187,7 @@ function Editor({ supplier, initial, startsNew, SelectorPanel }: EditorProps) {
                 pickVersion={formVersion}
                 readOnly={false}
               />
+              </PickFlashContext.Provider>
               {selected ? (
                 <div className="mt-3">
                   <Button look="text" onClick={() => dispatch({ kind: "remove", id: selected.id })}>Remove this step</Button>
@@ -186,6 +201,7 @@ function Editor({ supplier, initial, startsNew, SelectorPanel }: EditorProps) {
                 getDraftFlow={() => flow as unknown as FlowDefinition}
                 selectedNodeId={selected?.id ?? null}
                 onPickSelector={onPickSelector}
+                targetLabel={pickTarget(selected, picking ?? (selected ? ONLY_SELECTOR_FIELD[selected.type] : undefined))}
               />
             </Card>
           </aside>

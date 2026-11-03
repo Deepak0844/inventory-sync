@@ -1,4 +1,5 @@
 import { fireEvent, screen } from "@testing-library/react";
+import { useState } from "react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 
@@ -137,4 +138,73 @@ it("shows an error with Retry inside the block when the snapshot cannot be loade
   expect(await screen.findByText("Couldn't load the page snapshot.")).toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "Retry" }));
   await loaded();
+});
+
+describe("feedback", () => {
+  const before = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+  it("says above the page which step and field a click will fill", async () => {
+    serveHtml();
+    renderApp(<SelectorPicker snapshot={snapshot} onPick={() => {}} targetLabel="Fill step, Selector" />);
+    await loaded();
+    const line = screen.getByText("Picking for: Fill step, Selector");
+    expect(before(line, frame())).toBe(true);
+  });
+
+  it("says to press Pick first when there is no target", async () => {
+    serveHtml();
+    renderApp(<SelectorPicker snapshot={snapshot} onPick={() => {}} targetLabel={null} />);
+    await loaded();
+    const line = screen.getByText("Press Pick next to a field first, then click the element.");
+    expect(before(line, frame())).toBe(true);
+  });
+
+  it("confirms a pick above the page, in place of the hover hint", async () => {
+    serveHtml();
+    renderApp(<SelectorPicker snapshot={snapshot} onPick={() => {}} targetLabel="Fill step, Selector" />);
+    await loaded();
+    fireEvent.mouseOver(inFrame("#title"));
+    fireEvent.click(inFrame("#title"));
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Picked #title for Fill step, Selector");
+    expect(before(status, frame())).toBe(true);
+    expect(screen.queryByText(/^Click to pick/)).not.toBeInTheDocument();
+  });
+
+  it("keeps naming the target the pick went to, even after the target changes", async () => {
+    serveHtml();
+    function Harness() {
+      const [target, setTarget] = useState<string | null>("Fill step, Selector");
+      return (
+        <>
+          <SelectorPicker snapshot={snapshot} onPick={() => setTarget(null)} targetLabel={target} />
+        </>
+      );
+    }
+    renderApp(<Harness />);
+    await loaded();
+    fireEvent.click(inFrame("#title"));
+    expect(screen.getByRole("status")).toHaveTextContent("Picked #title for Fill step, Selector");
+  });
+
+  it("marks the picked element in the page, and only the latest one", async () => {
+    serveHtml();
+    renderApp(<SelectorPicker snapshot={snapshot} onPick={() => {}} />);
+    await loaded();
+    fireEvent.click(inFrame("#title"));
+    expect(inFrame("#title")).toHaveAttribute("data-picker-picked");
+    fireEvent.click(inFrame("a"));
+    expect(inFrame("a")).toHaveAttribute("data-picker-picked");
+    expect(inFrame("#title")).not.toHaveAttribute("data-picker-picked");
+  });
+
+  it("styles the picked mark differently from the hover mark", async () => {
+    serveHtml();
+    renderApp(<SelectorPicker snapshot={snapshot} onPick={() => {}} />);
+    await loaded();
+    const css = frame().contentDocument?.head.querySelector("style")?.textContent ?? "";
+    expect(css).toContain("[data-picker-hover]");
+    expect(css).toContain("[data-picker-picked]");
+    expect(css.match(/\[data-picker-picked\]\{[^}]*\}/)?.[0]).not.toEqual(css.match(/\[data-picker-hover\]\{[^}]*\}/)?.[0]);
+  });
 });
