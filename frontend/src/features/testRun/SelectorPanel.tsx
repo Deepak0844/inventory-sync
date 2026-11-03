@@ -15,6 +15,8 @@ interface Props {
   onPickSelector: (selector: string) => void;
   /** Skip text selectors, for the stock element whose text changes. */
   avoidText?: boolean;
+  /** Where a pick will go (see SelectorPicker); null when no field is waiting for one. */
+  targetLabel?: string | null;
   /** How often to ask for a running Test run; 1.5 s unless a test says otherwise. */
   pollIntervalMs?: number;
 }
@@ -26,6 +28,7 @@ export function SelectorPanel({
   selectedNodeId,
   onPickSelector,
   avoidText,
+  targetLabel,
   pollIntervalMs = POLL_MS,
 }: Props) {
   const controller = useTestRun(supplierId, getDraftFlow, pollIntervalMs);
@@ -39,6 +42,7 @@ export function SelectorPanel({
             snapshot={controller.snapshot.snapshot}
             onPick={onPickSelector}
             avoidText={avoidText}
+            targetLabel={targetLabel}
           />
         ) : (
           <BlockState kind="empty" message="No snapshot yet. Select a step in the flow and choose Take snapshot here." />

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { TestRunSnapshot } from "../../api/types";
 import { BlockState } from "../../components/ui/BlockState";
+import { Icon } from "../../components/shell/Icon";
 import { Button } from "../../components/ui/Button";
 import { TextField } from "../../components/ui/TextField";
 import { resolveSelector } from "./resolve";
@@ -9,7 +10,9 @@ import { useSnapshotHtmlQuery } from "./snapshotApi";
 import { stableSelector } from "./stableSelector";
 
 const HOVER_ATTR = "data-picker-hover";
+const PICKED_ATTR = "data-picker-picked";
 const DEFAULT_HINT = "Click an element on the page to pick it.";
+const NO_TARGET = "Press Pick next to a field first, then click the element.";
 
 interface Props {
   snapshot: TestRunSnapshot;
@@ -17,11 +20,16 @@ interface Props {
   onPick: (selector: string) => void;
   /** Skip text selectors, for the stock element whose text changes. */
   avoidText?: boolean;
+  /**
+   * Where a click will go, for example "Fill step, Selector". A string names the target, null says
+   * there is none yet (press Pick on a field), and leaving it out shows no target line at all.
+   */
+  targetLabel?: string | null;
 }
 
-/** The highlight colour comes from the accent token, because the frame is a separate document. */
-function accentColour(): string {
-  return getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "currentColor";
+/** The frame is a separate document, so its colours are read from the tokens and written in. */
+function token(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "currentColor";
 }
 
 function describeMatches(doc: Document | null, selector: string): string | null {
@@ -41,18 +49,19 @@ function describeMatches(doc: Document | null, selector: string): string | null 
  * The page is rendered in a sandboxed frame without scripts; the parent attaches the hover and
  * click listeners, so nothing from the Supplier's page runs.
  */
-export function SelectorPicker({ snapshot, onPick, avoidText = false }: Props) {
+export function SelectorPicker({ snapshot, onPick, avoidText = false, targetLabel }: Props) {
   const { data: html, isLoading, isError, refetch } = useSnapshotHtmlQuery(snapshot.html_url);
   const [view, setView] = useState<"page" | "screenshot">("page");
-  const [hint, setHint] = useState(DEFAULT_HINT);
-  const [picked, setPicked] = useState<string | null>(null);
+  const [hover, setHover] = useState<string | null>(null);
+  // The target is kept with the pick, because it changes once the pick has been used.
+  const [picked, setPicked] = useState<{ selector: string; label: string | null | undefined } | null>(null);
   const [typed, setTyped] = useState("");
   const [frameDoc, setFrameDoc] = useState<Document | null>(null);
   const detach = useRef<(() => void) | null>(null);
   // Listeners live as long as the frame, so they read the latest props from a ref.
-  const latest = useRef({ onPick, avoidText });
+  const latest = useRef({ onPick, avoidText, targetLabel });
   useEffect(() => {
-    latest.current = { onPick, avoidText };
+    latest.current = { onPick, avoidText, targetLabel };
   });
   useEffect(() => () => detach.current?.(), []);
 
@@ -62,10 +71,15 @@ export function SelectorPicker({ snapshot, onPick, avoidText = false }: Props) {
     detach.current?.();
     setFrameDoc(doc);
     const style = doc.createElement("style");
-    style.textContent = `[${HOVER_ATTR}]{outline:2px solid ${accentColour()};outline-offset:1px;cursor:pointer}`;
+    // The pick is drawn differently from the hover: heavier, in the positive colour, tinted.
+    style.textContent =
+      `[${HOVER_ATTR}]{outline:2px solid ${token("--accent")};outline-offset:1px;cursor:pointer}` +
+      `[${PICKED_ATTR}]{outline:3px solid ${token("--positive")};outline-offset:2px;` +
+      `background-color:${token("--pill-positive-bg")}}`;
     doc.head.append(style);
 
     let hovered: Element | null = null;
+    let pickedEl: Element | null = null;
     const clear = () => {
       hovered?.removeAttribute(HOVER_ATTR);
       hovered = null;
@@ -76,11 +90,11 @@ export function SelectorPicker({ snapshot, onPick, avoidText = false }: Props) {
       clear();
       hovered = el;
       el.setAttribute(HOVER_ATTR, "");
-      setHint(`Click to pick ${stableSelector(el, { avoidText: latest.current.avoidText })}`);
+      setHover(`Click to pick ${stableSelector(el, { avoidText: latest.current.avoidText })}`);
     };
     const leave = () => {
       clear();
-      setHint(DEFAULT_HINT);
+      setHover(null);
     };
     const click = (event: Event) => {
       event.preventDefault();
@@ -88,7 +102,11 @@ export function SelectorPicker({ snapshot, onPick, avoidText = false }: Props) {
       const el = event.target as Element;
       clear();
       const selector = stableSelector(el, { avoidText: latest.current.avoidText });
-      setPicked(selector);
+      pickedEl?.removeAttribute(PICKED_ATTR);
+      el.setAttribute(PICKED_ATTR, "");
+      pickedEl = el;
+      setHover(null);
+      setPicked({ selector, label: latest.current.targetLabel });
       latest.current.onPick(selector);
     };
     const block = (event: Event) => event.preventDefault();
@@ -111,7 +129,7 @@ export function SelectorPicker({ snapshot, onPick, avoidText = false }: Props) {
   const matches = view === "page" ? describeMatches(frameDoc, typed) : null;
   const use = () => {
     const selector = typed.trim();
-    setPicked(selector);
+    setPicked({ selector, label: targetLabel });
     onPick(selector);
   };
 
@@ -134,6 +152,14 @@ export function SelectorPicker({ snapshot, onPick, avoidText = false }: Props) {
         <BlockState kind="error" message="Couldn't load the page snapshot." onRetry={() => void refetch()} />
       ) : (
         <>
+          {targetLabel === undefined ? null : (
+            <p className="text-small font-semibold text-ink">
+              {targetLabel === null ? NO_TARGET : `Picking for: ${targetLabel}`}
+            </p>
+          )}
+          <p role="status" className={`text-small ${hover === null && picked ? "font-semibold text-positive" : "text-muted"}`}>
+            {hover ?? (picked ? <Picked pick={picked} /> : DEFAULT_HINT)}
+          </p>
           <iframe
             title="Page snapshot"
             sandbox="allow-same-origin"
@@ -142,7 +168,6 @@ export function SelectorPicker({ snapshot, onPick, avoidText = false }: Props) {
             onLoad={(event) => attach(event.currentTarget)}
             className="aspect-square w-full rounded-control border bg-surface"
           />
-          <p className="text-small text-muted">{hint}</p>
         </>
       )}
 
@@ -155,9 +180,16 @@ export function SelectorPicker({ snapshot, onPick, avoidText = false }: Props) {
         </Button>
       </div>
       {matches ? <p className="text-small text-muted">{matches}</p> : null}
-      <p aria-live="polite" className="text-small text-muted">
-        {picked ? <>Picked <span className="font-mono text-ink">{picked}</span></> : null}
-      </p>
     </div>
+  );
+}
+
+/** "(check) Picked #email for Fill step, Selector", shown above the page where it cannot be missed. */
+function Picked({ pick }: { pick: { selector: string; label: string | null | undefined } }) {
+  return (
+    <>
+      <span className="mr-1 inline-flex align-middle"><Icon name="approvals" /></span>Picked <span className="font-mono">{pick.selector}</span>
+      {pick.label ? ` for ${pick.label}` : null}
+    </>
   );
 }

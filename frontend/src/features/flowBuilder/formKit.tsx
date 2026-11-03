@@ -1,8 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useContext, useEffect, useRef } from "react";
 import type { FieldValues, UseFormReturn } from "react-hook-form";
 
 import { Button } from "../../components/ui/Button";
 import { TextField } from "../../components/ui/TextField";
+import { PickFlashContext } from "./pickFlash";
 
 /** Calls `commit` with the form's values (and the field that changed) on every edit. */
 export function useCommit<T extends FieldValues>(
@@ -32,8 +33,12 @@ interface SelectorFieldProps {
 /** A text field for a selector, with a Pick button that waits for a click on the page snapshot. */
 export function SelectorField({ label, field, picking, onPick, error, inputProps }: SelectorFieldProps) {
   const active = picking === field;
+  const flash = useContext(PickFlashContext) === field;
   return (
-    <div className="flex items-end gap-2">
+    <div
+      data-flash={flash ? "" : undefined}
+      className={`flex items-end gap-2 rounded-control ${flash ? "bg-pill-positive ring-2 ring-positive" : ""}`}
+    >
       <div className="min-w-0 flex-1">
         <TextField label={label} error={error} {...inputProps} />
       </div>

@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 
@@ -152,6 +152,64 @@ it("says what to do when a clicked element has nowhere to go", async () => {
   await screen.findByText("https://supplier-a.example/login");
   await userEvent.click(screen.getByRole("button", { name: "Choose #picked" }));
   expect(await screen.findByText("Press Pick next to a field first, then click the element.")).toBeInTheDocument();
+});
+
+describe("pick feedback", () => {
+  const labelPanel = ({ onPickSelector, targetLabel }: SelectorColumnProps) => (
+    <div>
+      <p data-testid="target">{targetLabel === undefined ? "undefined" : targetLabel === null ? "none" : targetLabel}</p>
+      <button onClick={() => onPickSelector("#picked")}>Choose #picked</button>
+    </div>
+  );
+
+  it("tells the panel which step and field a pick will fill", async () => {
+    serve();
+    open(labelPanel);
+    await screen.findByText("https://supplier-a.example/login");
+    expect(screen.getByTestId("target")).toHaveTextContent("none");
+    fireEvent.click(screen.getByText("button[type=submit]"));
+    await screen.findByLabelText("Selector");
+    expect(screen.getByTestId("target")).toHaveTextContent("Click step, Selector");
+  });
+
+  it("names the stock rule when its Pick button is armed", async () => {
+    serve();
+    open(labelPanel);
+    await screen.findByText("https://supplier-a.example/login");
+    await userEvent.click(await screen.findByRole("button", { name: "Pick selector for Stock element" }));
+    expect(screen.getByTestId("target")).toHaveTextContent("Stock rules, Stock element");
+  });
+
+  it("shows the picked selector on the step's card and flags the field that changed", async () => {
+    serve();
+    open(labelPanel);
+    await screen.findByText("https://supplier-a.example/login");
+    fireEvent.click(screen.getByText("button[type=submit]"));
+    await screen.findByLabelText("Selector");
+    await userEvent.click(screen.getByRole("button", { name: "Choose #picked" }));
+    await waitFor(() => expect(screen.getByLabelText("Selector")).toHaveValue("#picked"));
+    expect(screen.getByText("#picked", { selector: ".react-flow__node *" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Selector").closest("[data-flash]")).not.toBeNull();
+  });
+
+  it("stops flagging the field after a couple of seconds", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      serve();
+      open(labelPanel);
+      await screen.findByText("https://supplier-a.example/login");
+      fireEvent.click(screen.getByText("button[type=submit]"));
+      await screen.findByLabelText("Selector");
+      await userEvent.click(screen.getByRole("button", { name: "Choose #picked" }));
+      await waitFor(() => expect(screen.getByLabelText("Selector").closest("[data-flash]")).not.toBeNull());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2100);
+      });
+      expect(screen.getByLabelText("Selector").closest("[data-flash]")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 it("asks before leaving with unsaved changes", async () => {
