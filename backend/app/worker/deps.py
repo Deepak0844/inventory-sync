@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.clock import Clock
 from app.core.encryption import SecretBox
 from app.db.repos.settings import SettingsRecord, SettingsSecrets
-from app.flows.page import BrowserSession
+from app.flows.page import BrowserSession, Page
 from app.mail.codes import MailMessage
 from app.shopify.client import InventoryWriter
 from app.shopify.orders import OrderReader
@@ -26,7 +26,30 @@ class ShopifyApi(InventoryWriter, OrderReader, VariantSource, Protocol):
     """Writes inventory, reads orders and reads Variants."""
 
 
+class ManualBrowser(Protocol):
+    """An ordinary browser window a person is using."""
+
+    def is_running(self) -> bool:
+        """Whether the window is still open."""
+        ...
+
+
+class ProfileSession(Protocol):
+    """A headless look at a browser profile: one page, and what it stores."""
+
+    @property
+    def page(self) -> Page:
+        """The tab to look at."""
+        ...
+
+    def storage_state_json(self) -> str:
+        """Cookies and origin storage as JSON."""
+        ...
+
+
 BrowserFactory = Callable[[], AbstractContextManager[BrowserSession]]
+ManualBrowserFactory = Callable[[Path, str], AbstractContextManager[ManualBrowser]]
+ProfileBrowserFactory = Callable[[Path], AbstractContextManager[ProfileSession]]
 FetchMail = Callable[[], Sequence[MailMessage]]
 
 
@@ -40,6 +63,9 @@ class Deps:
     browser: BrowserFactory
     shopify: Callable[[SettingsRecord, SettingsSecrets], ShopifyApi | None]
     mail: Callable[[SettingsRecord, SettingsSecrets], FetchMail | None]
+    # Only the manual-browser worker sets these two; see `app.worker.manual_login`.
+    manual_browser: ManualBrowserFactory | None = None
+    profile_browser: ProfileBrowserFactory | None = None
     poll_s: float = 2.0
     data_dir: Path = Path("data")
 

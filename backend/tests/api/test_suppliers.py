@@ -299,3 +299,60 @@ def test_a_supplier_with_no_flow_yet_answers_null_not_an_error(auth: TestClient)
 
 def test_the_flow_of_an_unknown_supplier_is_still_a_404(auth: TestClient) -> None:
     assert auth.get("/api/suppliers/9999/flow").status_code == 404
+
+
+def ready_manual_login(
+    auth: TestClient, factory: sessionmaker[Session], state: str = "ready"
+) -> str:
+    """Enable the private browser, queue a manual login and put the worker's job in `state`."""
+    from app.db.repos.jobs import JobRepo
+    from tests.fakes import sample_flow_dict
+
+    app: Any = auth.app
+    app.state.manual_browser_enabled = True
+    s = add(auth)
+    assert auth.put(f"/api/suppliers/{s['id']}/flow", json=sample_flow_dict()).status_code == 200
+    url = f"/api/suppliers/{s['id']}/manual-login"
+    assert auth.post(url).status_code == 201
+    with factory() as session:
+        JobRepo(session).set_result(1, state)
+    return url
+
+
+def test_done_asks_the_worker_to_close_the_browser_and_check_the_login(
+    auth: TestClient, factory: sessionmaker[Session]
+) -> None:
+    url = ready_manual_login(auth, factory)
+    assert auth.post(f"{url}/finish").status_code == 202
+    assert auth.get(url).json()["session"]["state"] == "finishing"
+
+
+def test_done_is_refused_until_the_browser_is_ready(
+    auth: TestClient, factory: sessionmaker[Session]
+) -> None:
+    url = ready_manual_login(auth, factory, state="queued")
+    refused = auth.post(f"{url}/finish")
+    assert refused.status_code == 409 and "ready" in refused.json()["detail"]
+    assert auth.get(url).json()["session"]["state"] == "queued"
+
+
+def test_done_with_no_manual_login_open_is_refused(auth: TestClient) -> None:
+    app: Any = auth.app
+    app.state.manual_browser_enabled = True
+    s = add(auth)
+    assert auth.post(f"/api/suppliers/{s['id']}/manual-login/finish").status_code == 409
+
+
+def test_done_needs_the_private_browser_and_a_known_supplier(auth: TestClient) -> None:
+    s = add(auth)
+    assert auth.post(f"/api/suppliers/{s['id']}/manual-login/finish").status_code == 503
+    app: Any = auth.app
+    app.state.manual_browser_enabled = True
+    assert auth.post("/api/suppliers/999/manual-login/finish").status_code == 404
+
+
+def test_the_status_shows_the_checking_step(
+    auth: TestClient, factory: sessionmaker[Session]
+) -> None:
+    url = ready_manual_login(auth, factory, state="verifying")
+    assert auth.get(url).json()["session"]["state"] == "verifying"

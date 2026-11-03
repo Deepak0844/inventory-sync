@@ -145,3 +145,4 @@ class PlaywrightSupplierSession:
             self._replace_context()
         except Error as exc:
             raise PageError("could not clear browser state") from exc
+

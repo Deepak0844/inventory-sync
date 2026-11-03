@@ -13,7 +13,13 @@ from app.core.encryption import SecretBox
 from app.worker.deps import Deps
 from app.worker.jobs import Handler, run_once
 from app.worker.manual_login import handle_manual_login
-from app.worker.real import RealShopifyFactory, imap_fetch, visible_chromium
+from app.worker.real import (
+    RealShopifyFactory,
+    chromium,
+    headless_profile,
+    imap_fetch,
+    plain_chromium,
+)
 
 HANDLERS: dict[str, Handler] = {"manual_login": handle_manual_login}
 
@@ -28,9 +34,12 @@ def main() -> None:
         session_factory=sessionmaker(bind=engine),
         box=SecretBox(settings.encryption_key.get_secret_value()),
         clock=clock,
-        browser=visible_chromium,
+        browser=chromium,
         shopify=RealShopifyFactory(clock),
         mail=imap_fetch,
+        manual_browser=plain_chromium,
+        profile_browser=headless_profile,
+        data_dir=settings.data_dir,
     )
     stop = threading.Event()
     for signum in (signal.SIGTERM, signal.SIGINT):

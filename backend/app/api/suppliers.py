@@ -179,6 +179,23 @@ def get_manual_login(
     )
 
 
+@router.post(
+    "/suppliers/{supplier_id}/manual-login/finish", status_code=status.HTTP_202_ACCEPTED
+)
+def finish_manual_login(
+    supplier_id: int, request: Request, session: Db, box: Box
+) -> Response:
+    """Done: close the private browser and have the worker check the login and save the session."""
+    _manual_config(request)
+    try:
+        service.finish_manual_login(session, box, supplier_id)
+    except service.SupplierNotFound:
+        raise NOT_FOUND from None
+    except service.ManualLoginNotReady as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    return Response(status_code=status.HTTP_202_ACCEPTED)
+
+
 @router.delete("/suppliers/{supplier_id}/manual-login", status_code=status.HTTP_204_NO_CONTENT)
 def cancel_manual_login(
     supplier_id: int, request: Request, session: Db, box: Box

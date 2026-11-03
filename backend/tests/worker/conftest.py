@@ -4,6 +4,7 @@ from collections.abc import Callable
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -18,7 +19,14 @@ from app.shopify.client import ShopifyError
 from app.shopify.orders import Order
 from app.shopify.variants import ShopVariant
 from app.worker.deps import Deps
-from tests.fakes import FakeBrowserSession, FakeClock, ScriptedPage, sample_flow_dict
+from tests.fakes import (
+    FakeBrowserSession,
+    FakeClock,
+    FakeManualBrowser,
+    FakeProfileBrowser,
+    ScriptedPage,
+    sample_flow_dict,
+)
 
 T0 = 1_700_000_000.0
 BASE = "http://supplier.test"
@@ -78,6 +86,9 @@ class World:
     page: SitePage
     shopify: FakeShopify
     supplier_id: int
+    events: list[str]
+    manual: FakeManualBrowser
+    profile: FakeProfileBrowser
     gids: list[str] = field(default_factory=list)
     mail: list[MailMessage] = field(default_factory=list)
 
@@ -90,18 +101,23 @@ class World:
 
 
 def build_deps(session_factory: Callable[[], Session], box: SecretBox, clock: FakeClock,
-               page: SitePage, shopify: FakeShopify, mail: list[MailMessage]) -> Deps:
+               page: SitePage, shopify: FakeShopify, mail: list[MailMessage],
+               manual: FakeManualBrowser, profile: FakeProfileBrowser,
+               data_dir: Path) -> Deps:
     return Deps(
         session_factory=session_factory, box=box, clock=clock,
         browser=lambda: nullcontext(FakeBrowserSession(page)),
         shopify=lambda settings, secrets: shopify,
         mail=lambda settings, secrets: (lambda: mail),
+        manual_browser=manual,
+        profile_browser=profile,
         poll_s=1.0,
+        data_dir=data_dir,
     )
 
 
 @pytest.fixture
-def make_world(db_session: Session, db_engine: Engine) -> Callable[..., World]:
+def make_world(db_session: Session, db_engine: Engine, tmp_path: Path) -> Callable[..., World]:
     def make(variants: int = 3, **supplier_fields: Any) -> World:
         box = SecretBox(generate_key())
         clock = FakeClock(T0)
@@ -119,8 +135,11 @@ def make_world(db_session: Session, db_engine: Engine) -> Callable[..., World]:
             gids.append(f"gid://shopify/ProductVariant/{i}")
             catalog.upsert_variant(gids[-1], f"SKU{i}", f"Shirt {i}")
             catalog.import_rows([ImportRow(f"SKU{i}", sid, f"{BASE}/p/{i}", "")])
-        deps = build_deps(factory, box, clock, page, shopify, mail)
-        world = World(db_session, deps, clock, box, page, shopify, sid, gids, mail)
+        events: list[str] = []
+        manual, profile = FakeManualBrowser(events), FakeProfileBrowser(page, events)
+        deps = build_deps(factory, box, clock, page, shopify, mail, manual, profile, tmp_path)
+        world = World(db_session, deps, clock, box, page, shopify, sid, events, manual, profile,
+                      gids, mail)
         # A saved session that still works, so checks do not have to log in.
         from app.db.repos.suppliers import SessionCookiesRepo
         from app.flows.session_store import EncryptedSessionStore

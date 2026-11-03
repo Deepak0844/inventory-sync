@@ -3,15 +3,20 @@
 Not responsible for the worker loop (`app.worker.jobs`).
 """
 
+import json
+import signal
+import subprocess
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import timedelta
+from pathlib import Path
 
 import httpx
 from playwright.sync_api import Error, sync_playwright
 
 from app.core.clock import Clock
 from app.db.repos.settings import SettingsRecord, SettingsSecrets
+from app.flows.chromium_cookies import ProfileCookieError, read_cookies
 from app.flows.page import PageError
 from app.flows.playwright_session import PlaywrightSupplierSession
 from app.mail.codes import MailMessage
@@ -23,6 +28,7 @@ from app.shopify.variants import ShopifyVariantReader, ShopVariant
 from app.worker.deps import ShopifyApi
 
 MAILBOX_LOOKBACK = timedelta(minutes=30)
+CLOSE_TIMEOUT_S = 15.0
 
 
 class ShopifyFacade:
@@ -92,16 +98,100 @@ def chromium() -> Iterator[PlaywrightSupplierSession]:
             browser.close()
 
 
-@contextmanager
-def visible_chromium() -> Iterator[PlaywrightSupplierSession]:
-    """A headed Chromium shown on the container's private X display."""
-    with sync_playwright() as playwright:
-        try:
-            browser = playwright.chromium.launch(headless=False)
+class PlainChromium:
+    """A Chromium process a person is using. Nothing is attached to control it."""
+
+    def __init__(self, process: subprocess.Popen[bytes]) -> None:
+        self._process = process
+
+    def is_running(self) -> bool:
+        """Whether the browser is still open."""
+        return self._process.poll() is None
+
+    def stop(self) -> None:
+        """Close the browser and wait, so its cookies are on disk before anyone reads them.
+
+        SIGINT, not SIGTERM: Chromium saves its cookies on SIGINT, but SIGTERM exits at once and
+        drops every cookie changed in the last ~30 seconds, which is the login that just happened.
+        SIGTERM and then SIGKILL are only for a browser that ignores the first request.
+        """
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            if self._process.poll() is not None:
+                return
+            self._process.send_signal(sig)
             try:
-                with PlaywrightSupplierSession(browser) as session:
-                    yield session
-            finally:
-                browser.close()
-        except Error as exc:
-            raise PageError("the visible browser could not start or continue") from exc
+                self._process.wait(timeout=CLOSE_TIMEOUT_S)
+                return
+            except subprocess.TimeoutExpired:
+                continue
+        self._process.kill()
+        self._process.wait()
+
+
+@contextmanager
+def plain_chromium(
+    profile_dir: Path, url: str, executable: str | None = None
+) -> Iterator[PlainChromium]:
+    """Open Chromium as an ordinary program on the container's display, closed on exit.
+
+    It is deliberately not started through Playwright: remote control marks the browser as
+    automated (`navigator.webdriver`), and a Supplier's CAPTCHA can then reject a correct answer.
+    `--no-sandbox` is needed because the container has no user namespaces; this browser only
+    ever opens the Supplier's login page inside that private container. The basic password
+    store matches Playwright's, so `headless_profile` can read the cookies afterwards.
+
+    Raises:
+        PageError: if the program cannot be started.
+    """
+    try:
+        path = executable or _chromium_path()
+        _keep_session_cookies(profile_dir)
+        process = subprocess.Popen(
+            [path, f"--user-data-dir={profile_dir}", "--no-first-run",
+             "--no-default-browser-check", "--password-store=basic", "--no-sandbox",
+             "--disable-background-networking", "--disable-sync", "--disable-component-update",
+             "--window-position=0,0", "--window-size=1440,900", url],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    except (OSError, Error) as exc:
+        raise PageError("could not start Chromium for the manual login") from exc
+    browser = PlainChromium(process)
+    try:
+        yield browser
+    finally:
+        browser.stop()
+
+
+def _keep_session_cookies(profile_dir: Path) -> None:
+    """Make Chromium save cookies that have no expiry, which many Supplier logins use.
+
+    It only does so when it is set to restore the last session, so a plain close would
+    otherwise lose the login before the worker reads the profile.
+    """
+    default = profile_dir / "Default"
+    default.mkdir(parents=True, exist_ok=True)
+    (default / "Preferences").write_text(json.dumps({"session": {"restore_on_startup": 1}}))
+
+
+def _chromium_path() -> str:
+    with sync_playwright() as playwright:
+        return playwright.chromium.executable_path
+
+
+@contextmanager
+def headless_profile(profile_dir: Path) -> Iterator[PlaywrightSupplierSession]:
+    """A headless browser holding the cookies a person just logged in with.
+
+    The profile is not reopened by Chromium, because it drops cookies with no expiry when it
+    does; its cookie file is read directly instead (`app.flows.chromium_cookies`).
+
+    Raises:
+        PageError: if the profile's cookies cannot be read.
+    """
+    try:
+        cookies = read_cookies(profile_dir)
+    except ProfileCookieError as exc:
+        raise PageError("could not read the cookies from the browser profile") from exc
+    with chromium() as session:
+        session.load_storage_state_json(json.dumps({"cookies": cookies, "origins": []}))
+        yield session

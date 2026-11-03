@@ -40,6 +40,10 @@ class ManualLoginUnavailable(Exception):
     """A manual browser cannot start for this Supplier yet."""
 
 
+class ManualLoginNotReady(Exception):
+    """"Done" was pressed while there is no ready manual browser to finish."""
+
+
 @dataclass(frozen=True)
 class SupplierView:
     """A Supplier as the dashboard shows it, with derived health. No password."""
@@ -299,6 +303,22 @@ def cancel_manual_login(session: Session, box: SecretBox, supplier_id: int) -> N
     job = jobs.latest("manual_login", supplier_id)
     if job is not None and job.state in {"queued", "running"}:
         jobs.set_result(job.id, "cancelled")
+
+
+def finish_manual_login(session: Session, box: SecretBox, supplier_id: int) -> None:
+    """Tell the worker the owner has finished logging in: close the browser and check the login.
+
+    Raises:
+        SupplierNotFound: if there is no such Supplier.
+        ManualLoginNotReady: if the latest manual login is not `ready` (not started, still
+            starting, or already finished), so a stray click cannot cut a login short.
+    """
+    _record(session, box, supplier_id)
+    jobs = JobRepo(session)
+    job = jobs.latest("manual_login", supplier_id)
+    if job is None or job.payload.get("manual_state") != "ready":
+        raise ManualLoginNotReady("Wait until the private browser is ready, then press Done")
+    jobs.set_result(job.id, "finishing")
 
 
 def retry_supplier(session: Session, box: SecretBox, now: datetime, supplier_id: int) -> None:

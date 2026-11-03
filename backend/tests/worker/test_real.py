@@ -1,10 +1,10 @@
+import json
+import time
 from collections.abc import Callable
-from types import SimpleNamespace
-from typing import Any
+from pathlib import Path
 
 import httpx
 import pytest
-from playwright.sync_api import Error
 
 from app.db.repos.jobs import JobRecord
 from app.db.repos.notifications import NotificationRepo
@@ -70,20 +70,72 @@ def test_the_mailbox_is_only_available_with_all_three_settings() -> None:
     assert imap_fetch(no_host, SettingsSecrets(None, "pw")) is None
 
 
-def test_visible_browser_startup_failure_is_a_page_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    class BrokenPlaywright:
-        def __enter__(self) -> Any:
-            def fail(**_kwargs: Any) -> None:
-                raise Error("display is unavailable")
+def fake_chromium(tmp_path: Path) -> Path:
+    """A program that records its arguments and then stays open like a browser."""
+    script = tmp_path / "chromium"
+    script.write_text(f'#!/bin/sh\necho "$@" > {tmp_path}/args\nexec sleep 60\n')
+    script.chmod(0o755)
+    return script
 
-            return SimpleNamespace(chromium=SimpleNamespace(launch=fail))
 
-        def __exit__(self, *_args: Any) -> None:
+def test_the_plain_browser_is_an_ordinary_process_with_its_own_profile(tmp_path: Path) -> None:
+    profile = tmp_path / "profile"
+    with real.plain_chromium(profile, "https://s.test/login", str(fake_chromium(tmp_path))) as b:
+        assert b.is_running()
+        deadline = time.time() + 5
+        while not (tmp_path / "args").exists() and time.time() < deadline:
+            time.sleep(0.05)
+        args = (tmp_path / "args").read_text()
+    assert not b.is_running()
+    assert f"--user-data-dir={profile}" in args and args.strip().endswith("https://s.test/login")
+    # Remote control is what makes a site see "automation", so it must never be switched on.
+    assert "remote-debugging" not in args and "enable-automation" not in args
+
+
+def test_a_browser_that_cannot_start_is_a_page_error(tmp_path: Path) -> None:
+    with pytest.raises(PageError, match="could not start"):
+        with real.plain_chromium(tmp_path / "p", "https://s.test", str(tmp_path / "missing")):
             pass
 
-    monkeypatch.setattr(real, "sync_playwright", BrokenPlaywright)
-    with pytest.raises(PageError, match="visible browser"):
-        with real.visible_chromium():
+
+def test_a_profile_without_readable_cookies_is_a_page_error_with_the_reason(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(PageError, match="cookies") as caught:
+        with real.headless_profile(tmp_path):
             pass
+    assert "no cookie file" in str(caught.value.__cause__)
 
 
+def test_the_plain_browser_is_closed_with_sigint_so_it_saves_its_cookies(tmp_path: Path) -> None:
+    """Chromium writes cookies on SIGINT but drops recent ones on SIGTERM (checked by hand)."""
+    script = tmp_path / "chromium"
+    script.write_text(
+        "#!/bin/sh\n"
+        f"trap 'echo int > {tmp_path}/signal; exit 0' INT\n"
+        f"trap 'echo term > {tmp_path}/signal; exit 0' TERM\n"
+        f"echo ready > {tmp_path}/ready\n"
+        "while true; do sleep 0.05; done\n"
+    )
+    script.chmod(0o755)
+    with real.plain_chromium(tmp_path / "p", "https://s.test", str(script)):
+        deadline = time.time() + 5
+        while not (tmp_path / "ready").exists() and time.time() < deadline:
+            time.sleep(0.05)
+    assert (tmp_path / "signal").read_text().strip() == "int"
+
+
+def test_the_plain_browser_keeps_session_cookies_and_stays_quiet(tmp_path: Path) -> None:
+    """Logins often use cookies with no expiry; Chromium only saves those when it will restore
+    the last session. Its own background requests must not put other sites' cookies in the
+    saved login."""
+    profile = tmp_path / "profile"
+    with real.plain_chromium(profile, "https://s.test", str(fake_chromium(tmp_path))):
+        deadline = time.time() + 5
+        while not (tmp_path / "args").exists() and time.time() < deadline:
+            time.sleep(0.05)
+        args = (tmp_path / "args").read_text()
+    prefs = json.loads((profile / "Default" / "Preferences").read_text())
+    assert prefs["session"]["restore_on_startup"] == 1
+    for flag in ("--disable-background-networking", "--disable-sync", "--disable-component-update"):
+        assert flag in args

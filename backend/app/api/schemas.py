@@ -84,7 +84,9 @@ class CredentialsOut(BaseModel):
 
 class ManualLoginOut(BaseModel):
     id: int
-    state: Literal["queued", "ready", "succeeded", "failed", "expired", "cancelled"]
+    state: Literal[
+        "queued", "ready", "finishing", "verifying", "succeeded", "failed", "expired", "cancelled"
+    ]
     expires_at: datetime
     browser_url: str
     error: str | None
