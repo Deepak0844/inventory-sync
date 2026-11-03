@@ -40,9 +40,40 @@ describe("add", () => {
     expect(draftToFlow(d).edges.at(-1)).toEqual(["n10", "n11"]);
   });
 
-  it("does not steal the connection of a step that already has one", () => {
+  it("inserts the new step between the chosen step and the one that followed it", () => {
     const d = applyChange(start(), { kind: "add", nodeType: "click", position: { x: 0, y: 0 }, after: "n1" });
-    expect(draftToFlow(d).edges.filter((e) => e[0] === "n1")).toEqual([["n1", "n2"]]);
+    const edges = draftToFlow(d).edges;
+    expect(edges).toContainEqual(["n1", "n11"]);
+    expect(edges).toContainEqual(["n11", "n2"]);
+    expect(edges).not.toContainEqual(["n1", "n2"]);
+  });
+
+  it("inserts a Branch so that skipping it ('no') carries on to the next step", () => {
+    const d = applyChange(start(), { kind: "add", nodeType: "branch", position: { x: 0, y: 0 }, after: "n1" });
+    const edges = draftToFlow(d).edges;
+    expect(edges).toContainEqual(["n1", "n11"]);
+    expect(edges).toContainEqual(["n11", "n2", "no"]);
+    expect(edges.some((e) => e[0] === "n11" && e[2] === "yes")).toBe(false);
+  });
+
+  it("draws an inserted step between its neighbours, not at the bottom of the canvas", () => {
+    const d = applyChange(start(), { kind: "add", nodeType: "click", position: { x: 0, y: 9999 }, after: "n1" });
+    const y = (id: string) => d.graph.nodes.find((n) => n.id === id)!.position.y;
+    expect(y("n1")).toBeLessThan(y("n11"));
+    expect(y("n11")).toBeLessThan(y("n2"));
+  });
+
+  it("keeps the inserted step selected", () => {
+    const d = applyChange(start(), { kind: "add", nodeType: "click", position: { x: 0, y: 0 }, after: "n1" });
+    expect(d.graph.nodes.filter((n) => n.selected).map((n) => n.id)).toEqual(["n11"]);
+  });
+
+  it("puts a step added after that Branch on its free path and rejoins the main line", () => {
+    let d = applyChange(start(), { kind: "add", nodeType: "branch", position: { x: 0, y: 0 }, after: "n1" });
+    d = applyChange(d, { kind: "add", nodeType: "click", position: { x: 0, y: 0 }, after: "n11" });
+    const edges = draftToFlow(d).edges;
+    expect(edges).toContainEqual(["n11", "n12", "yes"]);
+    expect(edges).toContainEqual(["n12", "n2"]);
   });
 
   it("connects after a Branch to its first free path", () => {
