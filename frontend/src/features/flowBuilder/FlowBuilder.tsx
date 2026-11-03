@@ -28,6 +28,14 @@ interface EditorProps {
   SelectorPanel: ComponentType<SelectorColumnProps>;
 }
 
+/** The selector field of each step type that has exactly one. */
+const ONLY_SELECTOR_FIELD: Partial<Record<NodeType, string>> = {
+  fill: "selector",
+  click: "selector",
+  wait_for: "selector",
+  branch: "if_visible",
+};
+
 function Editor({ supplier, initial, startsNew, SelectorPanel }: EditorProps) {
   const navigate = useNavigate();
   const phone = useIsPhone();
@@ -41,6 +49,7 @@ function Editor({ supplier, initial, startsNew, SelectorPanel }: EditorProps) {
   const [leaving, setLeaving] = useState(false);
   const [pick, setPick] = useState<{ nodeId: string | null; field: string } | null>(null);
   const [formVersion, setFormVersion] = useState(0);
+  const [pickNote, setPickNote] = useState<string | null>(null);
 
   const flow = useMemo(() => draftToFlow(draft), [draft]);
   const json = JSON.stringify(flow);
@@ -90,10 +99,16 @@ function Editor({ supplier, initial, startsNew, SelectorPanel }: EditorProps) {
     setFormVersion((v) => v + 1);
   };
   const onPickSelector = (selector: string) => {
-    if (!picking) return;
-    if (selected) dispatch({ kind: "update", node: { ...selected, [picking]: selector } as typeof selected });
-    else dispatch({ kind: "extract", patch: { [picking]: selector } });
+    // A step with one selector field is the obvious target, so it needs no Pick press first.
+    const field = picking ?? (selected ? ONLY_SELECTOR_FIELD[selected.type] : undefined);
+    if (!field) {
+      setPickNote("Press Pick next to a field first, then click the element.");
+      return;
+    }
+    if (selected) dispatch({ kind: "update", node: { ...selected, [field]: selector } as typeof selected });
+    else dispatch({ kind: "extract", patch: { [field]: selector } });
     setPick(null);
+    setPickNote(null);
     setFormVersion((v) => v + 1);
   };
 
@@ -106,6 +121,7 @@ function Editor({ supplier, initial, startsNew, SelectorPanel }: EditorProps) {
         <Button look="text" onClick={() => (edited ? setLeaving(true) : navigate("/flows"))}>Back to flows</Button>
         <h1 className="text-title font-semibold">{supplier.name} flow</h1>
         {status ? <p role="status" className="text-small text-muted">{status}</p> : null}
+        {pickNote ? <p role="status" className="text-small text-negative">{pickNote}</p> : null}
         {!phone ? (
           <div className="ml-auto flex items-center gap-2">
             {!local.ok ? <p className="text-small text-negative">Fix {plural(problemCount)} to save</p> : null}
