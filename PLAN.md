@@ -36,12 +36,12 @@ The single plan file. Vocabulary is in [GLOSSARY.md](GLOSSARY.md). Decisions tha
 ### Shopify
 - The system turns on inventory tracking for mapped Variants, using the single location.
 - Quantity written: the Supplier's real quantity when shown, capped at a maximum you set. Otherwise 100, reset on every check. Sold Out writes 0.
-- An app created in the Shopify Dev Dashboard (new legacy custom apps can no longer be created in the store admin). Scopes: `read_products`, `read_inventory` and `write_inventory`. `write_products` is not needed: `inventoryItemUpdate` (turns tracking on) and `inventorySetQuantities` (sets quantity) both require `write_inventory`. `read_locations` may be needed to look up the location. To be confirmed in Phase 1.
+- An app created in the Shopify Dev Dashboard (new legacy custom apps can no longer be created in the store admin). Scopes: `read_products`, `read_inventory`, `write_inventory` and `read_orders`. `read_orders` is for polling recent orders to flag them (section 9); webhooks were rejected because they need a public URL. `write_products` is not needed: `inventoryItemUpdate` (turns tracking on) and `inventorySetQuantities` (sets quantity) both require `write_inventory`. `read_locations` may be needed to look up the location. To be confirmed in Phase 1.
 - Token: the client credentials grant gives a token that **expires after 24 hours**, so the system requests a new one automatically and never stores it as permanent. Client credentials only works when the app and the store belong to the same organization; otherwise the authorization code grant (a one-time install flow) gives a long-lived token. The client ID and secret are stored encrypted.
 
 ### Safety
 - Kill switch: if 30% or more of a Supplier's Listings (or more than 20) flip to Out of Stock in one run, the changes become **Pending Approval**.
-- Logins: at most 2 failed attempts per run, then the Supplier is paused until you retry. Sessions are reused so login and 2FA happen only when a session expires.
+- Logins: at most 2 failed attempts per run, then the Supplier is paused until you retry. A wrong password pauses the Supplier immediately, because retrying it risks locking the account; a wrong code allows one retry. Sessions are reused so login and 2FA happen only when a session expires.
 - A flow that stops finding its elements marks the Listing Unknown, raises a notification with a screenshot, and can be re-run after the flow is fixed.
 - Orders containing a Stale Variant, or a Variant that went Sold Out in the last 6 hours (editable), are flagged "verify with Supplier". The system never contacts customers.
 - No proxies or CAPTCHA solvers. A blocked Supplier shows "blocked".
@@ -193,7 +193,7 @@ sequenceDiagram
 Rules:
 - A code from the mailbox is only accepted from the Supplier's configured sender and only if received after the code was requested. This avoids using an old code.
 - A pasted code is never reused for a later run.
-- Only a wrong code counts as a failed attempt. An unanswered prompt does not. After **2 failed attempts in a run** the Supplier is paused until you retry from the dashboard.
+- A wrong code or a wrong password counts as a failed attempt; an unanswered prompt does not. A wrong password pauses the Supplier at once, since retrying it risks a lockout. A wrong code allows one retry, so after **2 failed attempts in a run** the Supplier is paused until you retry from the dashboard.
 - A **Login button** on each Supplier starts this flow on demand, so you can log in when you are at your desk.
 - If the Supplier offers a "trust this device" option, the flow ticks it, so the session lasts longer.
 - If the mailbox is not set up, only the UI prompt is used, and checks for that Supplier stop until you paste a code when the session expires.

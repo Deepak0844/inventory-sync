@@ -88,6 +88,16 @@ class ShopifyClient:
             "inventorySetQuantities",
         )
 
+    def graphql(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+        """Run a GraphQL query with the client's retry and backoff, returning `data`.
+
+        Shared with the order reader so both retry throttling the same way.
+
+        Raises:
+            ShopifyError: on a rejected request, GraphQL errors, or exhausted retries.
+        """
+        return self._query(query, variables)
+
     def _mutate(self, query: str, variables: dict[str, Any], field: str) -> None:
         errors = self._query(query, variables)[field]["userErrors"]
         if errors:
