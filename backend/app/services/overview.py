@@ -3,22 +3,32 @@
 Not responsible for HTTP. Reads only; nothing here changes state.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
+from typing import Protocol
 
 from sqlalchemy.orm import Session
 
 from app.core.encryption import SecretBox
-from app.db.repos.approvals import ApprovalRepo
-from app.db.repos.catalog import CatalogRepo
+from app.db.repos.counts import Counts
 from app.db.repos.history import ChangeRecord, HistoryRepo
-from app.db.repos.notifications import NotificationRepo
-from app.db.repos.orders import OrderRepo
 from app.db.repos.suppliers import SupplierRepo
 from app.services import catalog, suppliers
 
 RECENT_CHANGES = 6
 CHART_DAYS = 14
+
+
+class Change(Protocol):
+    """What the chart needs from a change: which Variant, when, and the state it went to."""
+
+    @property
+    def variant_id(self) -> int: ...
+    @property
+    def at(self) -> datetime: ...
+    @property
+    def to_state(self) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -62,13 +72,13 @@ class Banner:
     notifications: int
 
 
-def sold_out_by_day(changes: list[ChangeRecord], now: datetime, days: int) -> list[DayCount]:
+def sold_out_by_day(changes: Sequence[Change], now: datetime, days: int) -> list[DayCount]:
     """Count the Variants that were Sold Out at the end of each of the last `days` days.
 
     Args:
-        changes: Every inventory change, oldest first. A Variant's latest change at or before
-            the end of a day decides its state that day, so one sold out before the window
-            still counts.
+        changes: Inventory changes in any order: those inside the window plus each Variant's
+            last change before it. A Variant's latest change at or before the end of a day
+            decides its state that day, so one sold out before the window still counts.
         now: Today's count stops at this moment.
         days: How many days to return, ending today (UTC).
 
@@ -92,16 +102,18 @@ def sold_out_by_day(changes: list[ChangeRecord], now: datetime, days: int) -> li
 
 
 def build_overview(session: Session, box: SecretBox, now: datetime) -> Overview:
-    """Gather the numbers the Overview screen shows."""
-    catalog_repo = CatalogRepo(session)
-    stale = catalog.list_variants(session, box, now, None, True, None, None, 1).total
+    """Gather the numbers the Overview screen shows, in a fixed number of queries."""
+    counts = Counts(session)
+    by_state = counts.variants_by_state()
+    first_day = datetime.combine(now.date() - timedelta(days=CHART_DAYS - 1), time.min, now.tzinfo)
     return Overview(
         updated_at=now,
-        sold_out=catalog_repo.list_variants(state="sold_out", limit=1).total,
-        in_stock=catalog_repo.list_variants(state="available", limit=1).total,
-        stale=stale,
-        pending=len(ApprovalRepo(session).list_pending()),
-        sold_out_by_day=sold_out_by_day(HistoryRepo(session).all_changes(), now, CHART_DAYS),
+        sold_out=by_state.get("sold_out", 0),
+        in_stock=by_state.get("available", 0),
+        stale=catalog.count_stale(session, box, now),
+        pending=counts.pending_approvals(),
+        sold_out_by_day=sold_out_by_day(HistoryRepo(session).chart_changes(first_day), now,
+                                        CHART_DAYS),
         suppliers=[
             SupplierHealth(s.id, s.name, suppliers.supplier_health(s, now), s.last_success_at)
             for s in SupplierRepo(session, box).list()
@@ -111,7 +123,11 @@ def build_overview(session: Session, box: SecretBox, now: datetime) -> Overview:
 
 
 def build_banner(session: Session, box: SecretBox, now: datetime) -> Banner:
-    """Gather what the shell shows on every screen: overdue Suppliers and queue counts."""
+    """Gather what the shell shows on every screen: overdue Suppliers and queue counts.
+
+    Polled constantly, so it only counts rows; it never loads the lists.
+    """
+    counts = Counts(session)
     overdue = [
         RedStripEntry(s.id, s.name, s.last_success_at)
         for s in SupplierRepo(session, box).list()
@@ -119,7 +135,7 @@ def build_banner(session: Session, box: SecretBox, now: datetime) -> Banner:
     ]
     return Banner(
         red_strip=overdue,
-        approvals=len(ApprovalRepo(session).list_pending()),
-        orders=len(OrderRepo(session).list_flagged()),
-        notifications=len(NotificationRepo(session).list(resolved=False)),
+        approvals=counts.pending_approvals(),
+        orders=counts.flagged_orders(),
+        notifications=counts.unresolved_notifications(),
     )

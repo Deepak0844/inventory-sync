@@ -52,8 +52,14 @@ class ApprovedChange:
 
     variant_id: int
     gid: str
+    sku: str
     to_state: str
     quantity: int
+
+
+def variant_listing_ids(session: Session, variant_id: int) -> list[int]:
+    """Return the ids of every Listing mapped to the Variant."""
+    return list(session.scalars(select(Mapping.listing_id).where(Mapping.variant_id == variant_id)))
 
 
 def approved_changes(session: Session, approval_id: int) -> list[ApprovedChange] | None:
@@ -62,15 +68,19 @@ def approved_changes(session: Session, approval_id: int) -> list[ApprovedChange]
     if approval is None or approval.state != "approved":
         return None
     rows = session.execute(
-        select(ApprovalChange, Variant.shopify_variant_id)
+        select(ApprovalChange, Variant.shopify_variant_id, Variant.sku)
         .join(Variant, Variant.id == ApprovalChange.variant_id)
         .where(ApprovalChange.approval_id == approval_id).order_by(ApprovalChange.id)).all()
-    return [ApprovedChange(c.variant_id, gid, c.to_state, c.quantity) for c, gid in rows]
+    return [ApprovedChange(c.variant_id, gid, sku, c.to_state, c.quantity) for c, gid, sku in rows]
 
 
 @dataclass(frozen=True)
 class VariantInfo:
-    """A managed Variant: its Listings and the longest check interval among their Suppliers."""
+    """A managed Variant: its Listings and the shortest check interval among their Suppliers.
+
+    Shortest, because that is what the dashboard uses for Stale: a Variant read less
+    often than its most frequent Supplier checks is overdue.
+    """
 
     variant_id: int
     sku: str
@@ -90,4 +100,4 @@ def variant_info(session: Session, gid: str) -> VariantInfo | None:
         .where(Mapping.variant_id == variant.id)).all()
     if not rows:
         return None
-    return VariantInfo(variant.id, variant.sku, [r[0] for r in rows], max(r[1] for r in rows))
+    return VariantInfo(variant.id, variant.sku, [r[0] for r in rows], min(r[1] for r in rows))

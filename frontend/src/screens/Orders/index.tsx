@@ -18,6 +18,7 @@ export default function Orders() {
     {
       key: "reasons",
       header: "Why it is flagged",
+      phone: "key",
       cell: (o) => (
         <span className="flex flex-wrap gap-1">
           {o.reasons.map((r) => <Pill key={r} tone={reasonLabel[r].tone}>{reasonLabel[r].text}</Pill>)}

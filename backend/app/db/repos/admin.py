@@ -80,6 +80,11 @@ class AdminRepo:
         self._s.add(LoginThrottle(username=username, attempted_at=now))
         self._s.commit()
 
+    def prune_failures(self, before: datetime) -> None:
+        """Forget failures older than `before`, so the table cannot grow without bound."""
+        self._s.execute(delete(LoginThrottle).where(LoginThrottle.attempted_at < before))
+        self._s.commit()
+
     def failures_since(self, username: str, since: datetime) -> int:
         """Count failed sign-ins for `username` at or after `since`."""
         return self._s.scalar(select(func.count()).where(

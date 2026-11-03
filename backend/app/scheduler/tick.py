@@ -54,14 +54,11 @@ def tick(session: Session, box: SecretBox, now: datetime) -> None:
 def has_open_job(
     session: Session, kind: str, supplier_id: int | None, later_than: datetime | None = None
 ) -> bool:
-    """Whether a queued or running job exists, optionally only one set to run after a time."""
-    query = select(Job.id).where(
-        Job.kind == kind,
-        Job.supplier_id.is_(None) if supplier_id is None else Job.supplier_id == supplier_id,
-        Job.state.in_(["queued", "running"]))
-    if later_than is not None:
-        query = query.where(Job.run_after > later_than)
-    return session.scalar(query.limit(1)) is not None
+    """Whether a queued or running job exists, optionally only one set to run after a time.
+
+    Kept here because the worker imports it; the one implementation is `JobRepo.has_open_job`.
+    """
+    return JobRepo(session).has_open_job(kind, supplier_id, later_than)
 
 
 def _job_due(session: Session, kind: str, now: datetime, every: timedelta) -> bool:

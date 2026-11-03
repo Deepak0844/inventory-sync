@@ -64,6 +64,7 @@ export default {
       sidebar: "var(--sidebar-width)",
       topbar: "var(--topbar-height)",
       strip: "var(--strip-height)",
+      reading: "var(--reading-width)",
       icon: "var(--icon)",
     },
     extend: {

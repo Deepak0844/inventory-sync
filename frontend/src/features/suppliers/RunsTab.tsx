@@ -15,9 +15,9 @@ export function RunsTab({ supplierId }: { supplierId: number }) {
   const items = q.data?.items ?? [];
 
   const columns: Column<Run>[] = [
-    { key: "started", header: "Started", cell: (r) => ago(r.started_at, now) },
-    { key: "kind", header: "Kind", cell: (r) => r.kind },
-    { key: "state", header: "State", cell: (r) => r.state },
+    { key: "started", header: "Started", phone: "secondary", cell: (r) => ago(r.started_at, now) },
+    { key: "kind", header: "Kind", phone: "primary", cell: (r) => r.kind },
+    { key: "state", header: "State", phone: "key", cell: (r) => r.state },
     { key: "summary", header: "Summary", cell: (r) => r.summary || null },
   ];
 

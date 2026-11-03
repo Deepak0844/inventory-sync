@@ -29,6 +29,7 @@ export default function Suppliers() {
     {
       key: "health",
       header: "Status",
+      phone: "key",
       cell: (s) => {
         const mark = healthMark(s.health);
         return mark.tone ? <Pill tone={mark.tone}>{mark.label}</Pill> : <></>;

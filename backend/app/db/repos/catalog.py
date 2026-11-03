@@ -3,6 +3,7 @@
 Not responsible for parsing CSV files or for deciding Stock Status.
 """
 
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -187,12 +188,31 @@ class CatalogRepo:
 
     def get_mappings(self, variant_id: int) -> list[MappingRecord]:
         """Return a Variant's mappings, highest priority (lowest number) first."""
-        rows = self._s.execute(
-            select(Mapping.listing_id, Listing.supplier_id, Mapping.priority)
+        return self.mappings_for([variant_id])[variant_id]
+
+    def mappings_for(self, variant_ids: Collection[int] | None) -> dict[int, list[MappingRecord]]:
+        """Return the mappings of many Variants in one query (all of them when None).
+
+        Every requested id is a key, with an empty list when it has no mappings.
+        """
+        query = (
+            select(Mapping.variant_id, Mapping.listing_id, Listing.supplier_id, Mapping.priority)
             .join(Listing, Listing.id == Mapping.listing_id)
-            .where(Mapping.variant_id == variant_id).order_by(Mapping.priority)
-        ).all()
-        return [MappingRecord(*r) for r in rows]
+            .order_by(Mapping.variant_id, Mapping.priority)
+        )
+        if variant_ids is not None:
+            if not variant_ids:
+                return {}
+            query = query.where(Mapping.variant_id.in_(variant_ids))
+        result: dict[int, list[MappingRecord]] = {i: [] for i in variant_ids or []}
+        for variant_id, listing_id, supplier_id, priority in self._s.execute(query):
+            result.setdefault(variant_id, []).append(
+                MappingRecord(listing_id, supplier_id, priority))
+        return result
+
+    def variant_ids(self) -> list[int]:
+        """Return every Variant id, ascending."""
+        return list(self._s.scalars(select(Variant.id).order_by(Variant.id)))
 
     def set_mappings(self, variant_id: int, pairs: list[tuple[int, int]]) -> None:
         """Replace a Variant's mappings with `(listing_id, priority)` pairs."""
@@ -204,13 +224,18 @@ class CatalogRepo:
 
     def list_variants(
         self, state: str | None = None, q: str | None = None, cursor: str | None = None,
-        limit: int = 50,
+        limit: int = 50, ids: Collection[int] | None = None,
     ) -> VariantPage:
-        """Page through Variants with their mappings and the last 12 readings."""
+        """Page through Variants (by id) with their mappings and the last 12 readings.
+
+        `ids`, when given, restricts the page to those Variants (for example the Stale ones).
+        """
         query = (
             select(Variant, VariantStateRow)
             .outerjoin(VariantStateRow, VariantStateRow.variant_id == Variant.id)
         )
+        if ids is not None:
+            query = query.where(Variant.id.in_(ids))
         if state:
             query = query.where(VariantStateRow.state == state)
         if q:
@@ -221,7 +246,7 @@ class CatalogRepo:
         rows = self._s.execute(query.order_by(Variant.id).limit(limit + 1)).all()[: limit + 1]
         page = rows[:limit]
         ids = [v.id for v, _ in page]
-        mappings = {i: self.get_mappings(i) for i in ids}
+        mappings = self.mappings_for(ids)
         strips = self._readings(ids)
         items = [
             VariantRow(v.id, v.shopify_variant_id, v.sku, v.title, st.state if st else None,

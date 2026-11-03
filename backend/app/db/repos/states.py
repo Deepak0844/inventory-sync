@@ -4,9 +4,11 @@ Not responsible for the transitions themselves (`app.engine`). Converts the
 engine's epoch-second floats to and from stored timestamps.
 """
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import ListingStateRow, VariantStateRow
@@ -21,6 +23,16 @@ class VariantStateRecord:
     last_written_quantity: int | None
 
 
+def _to_state(row: ListingStateRow) -> ListingState:
+    return ListingState(
+        status=StockStatus(row.status), removed=row.removed,
+        last_success_at=None if row.last_success_at is None else row.last_success_at.timestamp(),
+        quantity=row.quantity,
+        streak_kind=None if row.streak_kind is None else StockStatus(row.streak_kind),
+        streak_count=row.streak_count, streak_last_at=row.streak_last_at,
+    )
+
+
 class StateRepo:
     """Listing and Variant state rows."""
 
@@ -30,16 +42,19 @@ class StateRepo:
     def get_listing_state(self, listing_id: int) -> ListingState:
         """Return the Listing's state; a Listing never read is Unknown."""
         row = self._s.get(ListingStateRow, listing_id)
-        if row is None:
-            return ListingState()
-        return ListingState(
-            status=StockStatus(row.status), removed=row.removed,
-            last_success_at=None if row.last_success_at is None
-            else row.last_success_at.timestamp(),
-            quantity=row.quantity,
-            streak_kind=None if row.streak_kind is None else StockStatus(row.streak_kind),
-            streak_count=row.streak_count, streak_last_at=row.streak_last_at,
-        )
+        return ListingState() if row is None else _to_state(row)
+
+    def listing_states(self, listing_ids: Collection[int] | None = None) -> dict[int, ListingState]:
+        """Return the state of many Listings in one query (all of them when None).
+
+        A Listing missing from the result has never been read, so it is Unknown.
+        """
+        query = select(ListingStateRow)
+        if listing_ids is not None:
+            if not listing_ids:
+                return {}
+            query = query.where(ListingStateRow.listing_id.in_(listing_ids))
+        return {row.listing_id: _to_state(row) for row in self._s.scalars(query)}
 
     def save_listing_state(self, listing_id: int, state: ListingState) -> None:
         """Insert or replace the Listing's state."""

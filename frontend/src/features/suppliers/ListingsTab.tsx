@@ -27,6 +27,7 @@ export function ListingsTab({ supplierId }: { supplierId: number }) {
     {
       key: "status",
       header: "Stock",
+      phone: "key",
       cell: (l) => {
         const s = status[l.status];
         return (

@@ -207,9 +207,13 @@ def save_flow(
 def queue_action(
     session: Session, box: SecretBox, now: datetime, supplier_id: int, kind: str
 ) -> None:
-    """Queue a `login` or `check_supplier` job for the worker. Raises SupplierNotFound."""
+    """Queue a `login` or `check_supplier` job for the worker, unless one is already open.
+
+    A double click must not make the worker hit the Supplier's site twice, and a second
+    run would count as another confirmation read. Raises SupplierNotFound.
+    """
     _record(session, box, supplier_id)
-    JobRepo(session).enqueue(kind, supplier_id, {}, run_after=now, now=now)
+    _enqueue_once(session, now, supplier_id, kind)
 
 
 def retry_supplier(session: Session, box: SecretBox, now: datetime, supplier_id: int) -> None:
@@ -218,7 +222,13 @@ def retry_supplier(session: Session, box: SecretBox, now: datetime, supplier_id:
     SupplierRepo(session, box).update(
         supplier_id, paused=False, pause_reason=None, failed_login_attempts=0
     )
-    JobRepo(session).enqueue("check_supplier", supplier_id, {}, run_after=now, now=now)
+    _enqueue_once(session, now, supplier_id, "check_supplier")
+
+
+def _enqueue_once(session: Session, now: datetime, supplier_id: int, kind: str) -> None:
+    jobs = JobRepo(session)
+    if not jobs.has_open_job(kind, supplier_id):
+        jobs.enqueue(kind, supplier_id, {}, run_after=now, now=now)
 
 
 def list_runs(session: Session, box: SecretBox, supplier_id: int) -> list[RunRecord]:

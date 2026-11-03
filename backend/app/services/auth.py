@@ -21,6 +21,7 @@ THROTTLE_WINDOW = timedelta(minutes=15)
 MAX_FAILURES = 5
 # Verified against when the username is unknown, so a miss costs the same time as a hit.
 _DUMMY_HASH = PasswordHasher().hash("not-a-real-password")
+_DUMMY_TOTP_SECRET = pyotp.random_base32()
 
 
 class SignInFailed(Exception):
@@ -55,7 +56,8 @@ def sign_in(
         now: Current time.
         username: As typed.
         password: As typed. Never logged or echoed.
-        totp: The 6-digit code. The previous 30-second step is accepted for clock drift.
+        totp: The 6-digit code. One 30-second step either side of now is accepted, for
+            clock drift.
 
     Returns:
         The new session token (give it to the browser; only its hash is stored).
@@ -70,11 +72,15 @@ def sign_in(
         raise TooManyAttempts
     user = repo.get_user(username)
     password_ok = password_matches(user.password_hash if user else _DUMMY_HASH, password)
-    code_ok = user is not None and pyotp.TOTP(user.totp_secret).verify(
+    # Checked for an unknown username too (against a dummy secret), so a miss takes the
+    # same time as a hit and does not reveal which usernames exist.
+    code_ok = pyotp.TOTP(user.totp_secret if user else _DUMMY_TOTP_SECRET).verify(
         totp, for_time=now, valid_window=1
     )
     if user is None or not (password_ok and code_ok):
         repo.record_failure(username, now)
+        # Old failures no longer count toward the limit; dropping them keeps the table small.
+        repo.prune_failures(now - THROTTLE_WINDOW)
         raise SignInFailed
     token = secrets.token_urlsafe(32)
     repo.create_session(user.id, hash_token(token), now, now + SESSION_TTL)

@@ -56,6 +56,20 @@ class ApprovalRepo:
         self._s.commit()
         return approval.id
 
+    def merge_changes(self, approval_id: int, changes: list[HeldChange]) -> None:
+        """Add changes to a pending batch; a Variant already in it is updated, not repeated."""
+        existing = {c.variant_id: c for c in self._s.scalars(
+            select(ApprovalChange).where(ApprovalChange.approval_id == approval_id))}
+        for c in changes:
+            row = existing.get(c.variant_id)
+            if row is None:
+                self._s.add(ApprovalChange(approval_id=approval_id, variant_id=c.variant_id,
+                                           from_state=c.from_state, to_state=c.to_state,
+                                           quantity=c.quantity))
+            else:
+                row.from_state, row.to_state, row.quantity = c.from_state, c.to_state, c.quantity
+        self._s.commit()
+
     def list_pending(self) -> list[PendingApproval]:
         """Return batches still waiting, oldest first."""
         rows = self._s.execute(

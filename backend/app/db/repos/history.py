@@ -6,7 +6,7 @@ Not responsible for pruning old readings or screenshots (a later job).
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import InventoryChange, Reading, Variant
@@ -30,6 +30,15 @@ class ChangeRecord:
     to_state: str
     reason: str
     approval: str
+
+
+@dataclass(frozen=True)
+class StateChange:
+    """The part of a change the Sold Out chart needs."""
+
+    variant_id: int
+    at: datetime
+    to_state: str
 
 
 class HistoryRepo:
@@ -73,6 +82,24 @@ class HistoryRepo:
         ).all()
         return [ChangeRecord(c.at, c.variant_id, sku, c.from_state, c.to_state, c.reason,
                              c.approval) for c, sku in rows]
+
+    def chart_changes(self, since: datetime) -> list[StateChange]:
+        """Return what the Sold Out chart needs: changes from `since`, plus the last change
+        of every Variant before `since` (so a Variant sold out earlier still counts).
+
+        Bounded by the chart window, not by the size of the history.
+        """
+        latest = (
+            select(InventoryChange.variant_id, func.max(InventoryChange.at).label("at"))
+            .where(InventoryChange.at < since).group_by(InventoryChange.variant_id).subquery()
+        )
+        before = select(InventoryChange.variant_id, InventoryChange.at, InventoryChange.to_state)\
+            .join(latest, (latest.c.variant_id == InventoryChange.variant_id)
+                  & (latest.c.at == InventoryChange.at))
+        inside = select(InventoryChange.variant_id, InventoryChange.at, InventoryChange.to_state)\
+            .where(InventoryChange.at >= since)
+        rows = self._s.execute(before.union(inside)).all()
+        return [StateChange(v, at, to_state) for v, at, to_state in rows]
 
     def recent_changes(self, limit: int) -> list[ChangeRecord]:
         """Return the latest changes, newest first."""

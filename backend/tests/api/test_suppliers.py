@@ -121,6 +121,16 @@ def test_login_check_and_retry_queue_work_for_the_worker(
     assert jobs(factory) == [("login", s["id"]), ("check_supplier", s["id"])]
 
 
+def test_a_second_click_still_answers_202_but_queues_nothing_more(
+    auth: TestClient, factory: sessionmaker[Session]
+) -> None:
+    s = add(auth)
+    base = f"/api/suppliers/{s['id']}"
+    assert auth.post(f"{base}/check").status_code == 202
+    assert auth.post(f"{base}/check").status_code == 202
+    assert jobs(factory) == [("check_supplier", s["id"])]
+
+
 def test_retry_clears_a_pause_and_queues_a_check(
     auth: TestClient, factory: sessionmaker[Session]
 ) -> None:

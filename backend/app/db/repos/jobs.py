@@ -90,3 +90,21 @@ class JobRepo:
         )
         self._s.commit()
         return int(result.rowcount)  # type: ignore[attr-defined]
+
+    def has_open_job(
+        self, kind: str, supplier_id: int | None, later_than: datetime | None = None
+    ) -> bool:
+        """Whether a queued or running job of this kind exists for the Supplier.
+
+        Args:
+            kind: The job kind.
+            supplier_id: The Supplier, or None for a job that belongs to no Supplier.
+            later_than: If given, only count jobs set to run after this time.
+        """
+        query = select(Job.id).where(
+            Job.kind == kind,
+            Job.supplier_id.is_(None) if supplier_id is None else Job.supplier_id == supplier_id,
+            Job.state.in_(["queued", "running"]))
+        if later_than is not None:
+            query = query.where(Job.run_after > later_than)
+        return self._s.scalar(query.limit(1)) is not None

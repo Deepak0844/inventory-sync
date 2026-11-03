@@ -31,7 +31,7 @@ from app.shopify.apply import apply_changes
 from app.worker import queries
 from app.worker.deps import Deps
 from app.worker.login import login_with_policy
-from app.worker.notify import notify_once
+from app.worker.notify import notify_once, replace_notification
 from app.worker.shop import connect
 
 _PROBLEMS = {"blocked": "blocked", "browser_error": "supplier_unreachable"}
@@ -161,14 +161,15 @@ def _decide_and_apply(
     by_gid = {r.gid: r for r in mapped}
     now = deps.now()
     if plan.held:
-        ApprovalRepo(session).create(supplier.id, [
-            HeldChange(by_gid[c.variant_id].variant_id,
-                       None if old[c.variant_id] is None else old[c.variant_id].state,  # type: ignore[union-attr]
-                       "sold_out", 0)
-            for c in plan.held], now) if not _has_pending(session, supplier.id) else None
-        notify_once(session, "pending_approval", supplier.id,
-                    f"{supplier.name}: {len(plan.held)} Variants would sell out at once. "
-                    "Review them before anything changes in Shopify.", now)
+        held = []
+        for c in plan.held:
+            previous = old[c.variant_id]
+            held.append(HeldChange(by_gid[c.variant_id].variant_id,
+                                   None if previous is None else previous.state, "sold_out", 0))
+        total = _hold(session, supplier.id, held, now)
+        replace_notification(session, "pending_approval", supplier.id,
+                             f"{supplier.name}: {total} Variants would sell out at once. "
+                             "Review them before anything changes in Shopify.", now)
     # The per-check quantity refresh needs a fresh reading: after a failed check the
     # Variant keeps its last known state, and rewriting Shopify then would be a guess.
     applied = [c for c in plan.applied
@@ -196,5 +197,15 @@ def _decide_and_apply(
                     f"({skus}).", now)
 
 
-def _has_pending(session: Session, supplier_id: int) -> bool:
-    return any(a.supplier_id == supplier_id for a in ApprovalRepo(session).list_pending())
+def _hold(session: Session, supplier_id: int, held: list[HeldChange], now: datetime) -> int:
+    """Hold changes for approval, joining the Supplier's open batch if it has one.
+
+    Returns how many Variants the batch now holds.
+    """
+    approvals = ApprovalRepo(session)
+    open_batch = next((a for a in approvals.list_pending() if a.supplier_id == supplier_id), None)
+    if open_batch is None:
+        approvals.create(supplier_id, held, now)
+        return len(held)
+    approvals.merge_changes(open_batch.id, held)
+    return len({c.variant_id for c in open_batch.changes} | {c.variant_id for c in held})

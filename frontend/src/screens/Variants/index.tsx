@@ -45,6 +45,7 @@ export default function Variants() {
     {
       key: "state",
       header: "State",
+      phone: "key",
       cell: (v) => (
         <span className="flex flex-wrap items-center gap-1">
           {v.state === "sold_out" ? <Pill tone="negative">Sold out</Pill> : v.state === "available" ? <span className="text-muted">In stock</span> : null}
@@ -56,8 +57,7 @@ export default function Variants() {
     {
       key: "readings",
       header: "Recent readings",
-      // The strip reuses the 228px column width until the design tokens get a dedicated one.
-      cell: (v) => <div className="w-sidebar"><ReadingStrip readings={v.readings} /></div>,
+      cell: (v) => <div className="w-reading max-w-full"><ReadingStrip readings={v.readings} /></div>,
     },
   ];
 

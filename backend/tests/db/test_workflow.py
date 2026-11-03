@@ -82,3 +82,14 @@ def test_runs_start_and_finish(db_session: Session) -> None:
     runs.finish(run_id, "ok", "12 listings read", later(30))
     done = runs.list_for_supplier(supplier)[0]
     assert (done.state, done.summary, done.finished_at) == ("ok", "12 listings read", later(30))
+
+
+def test_merging_adds_new_variants_and_updates_existing_ones(db_session: Session) -> None:
+    approval_id = approval_with_one_change(db_session)
+    other = CatalogRepo(db_session).upsert_variant("gid://v/2", "SKU-2", "T2")
+    first = ApprovalRepo(db_session).list_pending()[0].changes[0].variant_id
+    ApprovalRepo(db_session).merge_changes(approval_id, [
+        HeldChange(first, "available", "sold_out", 5),
+        HeldChange(other, "available", "sold_out", 0)])
+    changes = ApprovalRepo(db_session).list_pending()[0].changes
+    assert sorted((c.variant_id, c.quantity) for c in changes) == sorted([(first, 5), (other, 0)])

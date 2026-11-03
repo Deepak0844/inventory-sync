@@ -23,12 +23,12 @@ from app.db.repos.catalog import (
 )
 from app.db.repos.states import StateRepo
 from app.db.repos.suppliers import SupplierRepo
+from app.engine.listing import ListingState
 from app.engine.safety import is_variant_stale
 
 MAX_IMPORT_BYTES = 1_048_576
 MAX_IMPORT_ROWS = 10_000
 _REQUIRED = ("sku", "supplier", "url")
-_PAGE = 500
 
 
 class ImportRejected(Exception):
@@ -150,21 +150,37 @@ def list_listings(
 
 
 def _stale_flags(
-    session: Session, box: SecretBox, now: datetime, rows: list[VariantRow]
+    session: Session, box: SecretBox, now: datetime, mappings: Mapping[int, list[MappingRecord]]
 ) -> dict[int, bool]:
     """Stale per Variant, using the shortest interval among its Suppliers.
 
     The shortest is the strictest: it flags a Variant a little early rather than late,
-    which only costs an extra "verify with Supplier" on an order.
+    which only costs an extra "verify with Supplier" on an order. Listing states and
+    Suppliers are loaded once for all the Variants, not once per Variant.
     """
     intervals = {s.id: s.interval_min * 60.0 for s in SupplierRepo(session, box).list()}
-    states = StateRepo(session)
-    flags: dict[int, bool] = {}
-    for row in rows:
-        listing_states = [states.get_listing_state(m.listing_id) for m in row.listings]
-        interval = min((intervals[m.supplier_id] for m in row.listings), default=0.0)
-        flags[row.id] = is_variant_stale(listing_states, now.timestamp(), interval)
-    return flags
+    states = StateRepo(session).listing_states({m.listing_id for ms in mappings.values()
+                                                for m in ms})
+    return {
+        variant_id: is_variant_stale(
+            [states.get(m.listing_id, ListingState()) for m in listings], now.timestamp(),
+            min((intervals[m.supplier_id] for m in listings), default=0.0))
+        for variant_id, listings in mappings.items()
+    }
+
+
+def _all_stale_flags(session: Session, box: SecretBox, now: datetime) -> dict[int, bool]:
+    """Stale for every Variant, in a fixed number of queries however large the catalog is."""
+    repo = CatalogRepo(session)
+    mappings = repo.mappings_for(None)
+    for variant_id in repo.variant_ids():
+        mappings.setdefault(variant_id, [])
+    return _stale_flags(session, box, now, mappings)
+
+
+def count_stale(session: Session, box: SecretBox, now: datetime) -> int:
+    """How many Variants are Stale right now (for the Overview)."""
+    return sum(_all_stale_flags(session, box, now).values())
 
 
 def list_variants(
@@ -173,27 +189,19 @@ def list_variants(
 ) -> VariantsView:
     """Page through Variants with mappings, the reading strip and whether each is Stale.
 
-    With a `stale` filter every matching Variant is checked first, so `total` stays honest.
+    With a `stale` filter, the matching Variant ids are worked out first and the page is
+    cut from them in id order, so `total` is honest and the cursor never skips or repeats.
     """
     repo = CatalogRepo(session)
     if stale is None:
         page = repo.list_variants(state, q, cursor, limit)
-        flags = _stale_flags(session, box, now, page.items)
-        return VariantsView([VariantView(r, flags[r.id]) for r in page.items], page.total,
-                            page.next_cursor)
-    matching: list[VariantView] = []
-    after: str | None = None
-    while True:
-        page = repo.list_variants(state, q, after, _PAGE)
-        flags = _stale_flags(session, box, now, page.items)
-        matching += [VariantView(r, flags[r.id]) for r in page.items if flags[r.id] is stale]
-        if page.next_cursor is None:
-            break
-        after = page.next_cursor
-    start = [v for v in matching if cursor is None or v.row.id > int(cursor)]
-    items = start[:limit]
-    more = len(start) > limit
-    return VariantsView(items, len(matching), str(items[-1].row.id) if more else None)
+        flags = _stale_flags(session, box, now, {r.id: r.listings for r in page.items})
+    else:
+        wanted = {i for i, flag in _all_stale_flags(session, box, now).items() if flag is stale}
+        page = repo.list_variants(state, q, cursor, limit, ids=wanted)
+        flags = {r.id: stale for r in page.items}
+    return VariantsView([VariantView(r, flags[r.id]) for r in page.items], page.total,
+                        page.next_cursor)
 
 
 def get_mappings(session: Session, variant_id: int) -> list[MappingRecord]:

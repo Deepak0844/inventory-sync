@@ -35,6 +35,6 @@
   --row-height: 48px;  --sidebar-width: 228px;  --topbar-height: 48px;
   --space-1: 4px;  --space-2: 8px;  --space-3: 12px;  --space-4: 16px;  --space-6: 24px;  --space-8: 32px;
   --gap: 24px;  --pad: 24px;  --control-height: 32px;  --touch: 44px;
-  --strip-height: 28px;  --icon: 16px;  --tick: 2px;  --track: 2px;
+  --strip-height: 28px;  --reading-width: 192px;  --icon: 16px;  --tick: 2px;  --track: 2px;
   --fs-title: 22px;  --fs-section: 16px;  --fs-kpi: 28px;  --fs-body: 14px;  --fs-small: 12px;
 }

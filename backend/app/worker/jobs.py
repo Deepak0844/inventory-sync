@@ -81,13 +81,14 @@ def _secrets(deps: Deps, session: Session, job: JobRecord) -> list[str]:
 def serve(
     deps: Deps, stop: threading.Event, tick_every_s: float = 30.0, idle_s: float = 1.0
 ) -> None:
-    """Run until `stop` is set: tick the scheduler regularly and work through due jobs."""
-    with deps.session_factory() as session:
-        JobRepo(session).requeue_stale(deps.now(), STALE_AFTER_S)
+    """Run until `stop` is set: each tick requeues stale jobs and runs the scheduler, then work."""
     next_tick = 0.0
     while not stop.is_set():
         if deps.clock.now() >= next_tick:
             with deps.session_factory() as session:
+                # Every tick, not just at start: a job a dead worker left running would
+                # otherwise block its Supplier's next check until a restart.
+                JobRepo(session).requeue_stale(deps.now(), STALE_AFTER_S)
                 tick(session, deps.box, deps.now())
             next_tick = deps.clock.now() + tick_every_s
         if not run_once(deps):

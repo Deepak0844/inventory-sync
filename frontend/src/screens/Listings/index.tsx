@@ -42,7 +42,7 @@ export default function Listings() {
       ),
     },
     { key: "supplier", header: "Supplier", cell: (l) => supplierName(l.supplier_id) },
-    { key: "status", header: "Status", cell: (l) => <StatusMark listing={l} /> },
+    { key: "status", header: "Status", phone: "key", cell: (l) => <StatusMark listing={l} /> },
     { key: "quantity", header: "Quantity", numeric: true, cell: (l) => l.quantity },
     { key: "last", header: "Last success", cell: (l) => (l.last_success_at ? ago(l.last_success_at, now) : null) },
   ];
