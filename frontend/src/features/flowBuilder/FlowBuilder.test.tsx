@@ -75,6 +75,26 @@ it("saves the flow that was edited and then reports it saved", async () => {
   expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
 });
 
+it("saves from the selected step's inspector", async () => {
+  serve();
+  let sent: unknown;
+  server.use(
+    http.put(`${API}/suppliers/1/flow`, async ({ request }) => {
+      sent = await request.json();
+      return HttpResponse.json(sent as Record<string, unknown>);
+    }),
+  );
+  open();
+  fireEvent.click(await screen.findByText("button[type=submit]"));
+  const selector = await screen.findByLabelText("Selector");
+  await userEvent.clear(selector);
+  await userEvent.type(selector, "button.login");
+  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(await screen.findByText("Flow saved.")).toBeInTheDocument();
+  expect((sent as { nodes: Array<{ id: string; selector?: string }> }).nodes)
+    .toContainEqual(expect.objectContaining({ id: "n4", selector: "button.login" }));
+});
+
 it("shows the server's reasons when it refuses the flow", async () => {
   serve();
   server.use(
