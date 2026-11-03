@@ -7,6 +7,7 @@ from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Protocol
 
 from sqlalchemy.orm import Session
@@ -40,6 +41,7 @@ class Deps:
     shopify: Callable[[SettingsRecord, SettingsSecrets], ShopifyApi | None]
     mail: Callable[[SettingsRecord, SettingsSecrets], FetchMail | None]
     poll_s: float = 2.0
+    data_dir: Path = Path("data")
 
     def now(self) -> datetime:
         """The clock's time as a timezone-aware datetime."""

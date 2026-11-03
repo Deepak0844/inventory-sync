@@ -312,3 +312,48 @@ class SettingsIn(BaseModel):
 class ShopifyTestOut(BaseModel):
     ok: bool
     detail: str
+
+
+class NewTestRun(BaseModel):
+    """Start a Test run. `flow` is an unsaved draft; the saved flow is used when it is omitted."""
+
+    supplier_id: int
+    mode: Literal["login", "extract"]
+    flow: dict[str, Any] | None = None
+    up_to_node_id: str | None = None
+    listing_url: str | None = None
+
+
+class TestRunStepOut(BaseModel):
+    node_id: str
+    type: str
+    ok: bool
+    error: str | None
+    screenshot_url: str | None
+    at: str
+
+
+class TestRunSnapshotOut(BaseModel):
+    screenshot_url: str
+    html_url: str
+
+
+class TestRunReadingOut(BaseModel):
+    result: str
+    error_kind: str | None
+    quantity: int | None
+    matched_rule: str | None
+
+
+class TestRunOut(BaseModel):
+    """A Test run. It never writes to Shopify, so `wrote_to_shopify` is always False."""
+
+    id: int
+    state: str
+    mode: str
+    steps: list[TestRunStepOut]
+    snapshot: TestRunSnapshotOut | None
+    reading: TestRunReadingOut | None
+    login_result: str | None
+    error: str | None
+    wrote_to_shopify: Literal[False] = False

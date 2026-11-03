@@ -13,6 +13,7 @@ from app.core.masking import mask_secrets
 from app.db.repos.jobs import JobRecord, JobRepo
 from app.db.repos.settings import SettingsRepo
 from app.db.repos.suppliers import SupplierRepo
+from app.db.repos.test_runs import FlowTestRunRepo
 from app.scheduler.tick import tick
 from app.worker.approval import handle_apply_approval
 from app.worker.check import handle_check_supplier
@@ -21,6 +22,7 @@ from app.worker.login import handle_login
 from app.worker.orders import handle_poll_orders
 from app.worker.summary import handle_daily_summary
 from app.worker.sync import handle_sync_variants
+from app.worker.test_run import handle_test_run
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +34,7 @@ HANDLERS: dict[str, Handler] = {
     "sync_variants": handle_sync_variants,
     "poll_orders": handle_poll_orders,
     "daily_summary": handle_daily_summary,
+    "test_run": handle_test_run,
 }
 MAX_ATTEMPTS = 3
 RETRY_AFTER_S = 300.0
@@ -89,6 +92,7 @@ def serve(
                 # Every tick, not just at start: a job a dead worker left running would
                 # otherwise block its Supplier's next check until a restart.
                 JobRepo(session).requeue_stale(deps.now(), STALE_AFTER_S)
+                FlowTestRunRepo(session).reap_stale(deps.now())  # a dead worker's Test run
                 tick(session, deps.box, deps.now())
             next_tick = deps.clock.now() + tick_every_s
         if not run_once(deps):

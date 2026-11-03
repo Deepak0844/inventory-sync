@@ -4,6 +4,7 @@ Not responsible for what happens on the pages.
 """
 
 import json
+from collections.abc import Sequence
 from types import TracebackType
 from typing import Any
 
@@ -66,6 +67,13 @@ class PlaywrightPageAdapter:
             return self._page.inner_text(selector)
         except Error as exc:
             raise PageError(f"could not read {selector}") from exc
+
+    def screenshot(self, mask_selectors: Sequence[str]) -> bytes:
+        """A PNG with the masked elements covered. Raises PageError if it cannot be taken."""
+        try:
+            return self._page.screenshot(mask=[self._page.locator(s) for s in mask_selectors])
+        except Error as exc:
+            raise PageError("could not take a screenshot") from exc
 
     def content(self) -> str:
         """The page HTML. Raises PageError if the page is gone."""

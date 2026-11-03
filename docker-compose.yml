@@ -15,6 +15,8 @@ services:
 
   api:
     build: ./backend
+    volumes:
+      - appdata:/srv/data  # Test run screenshots: the worker writes them, the API serves them
     environment:
       DATABASE_URL: postgresql+psycopg://inventory:${POSTGRES_PASSWORD}@db:5432/inventory
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
@@ -32,6 +34,8 @@ services:
   worker:
     build: ./backend
     command: ["python", "-m", "app.worker"]
+    volumes:
+      - appdata:/srv/data
     environment:
       DATABASE_URL: postgresql+psycopg://inventory:${POSTGRES_PASSWORD}@db:5432/inventory
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
@@ -43,3 +47,4 @@ services:
 
 volumes:
   pgdata:
+  appdata:

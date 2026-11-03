@@ -47,3 +47,5 @@ class Reading:
     result: ReadingResult
     error_kind: str | None = None
     quantity: int | None = None
+    # Which extract rule matched ("in_stock_if" or "out_of_stock_if"); shown by Test runs.
+    matched_rule: str | None = None

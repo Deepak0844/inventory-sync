@@ -190,6 +190,26 @@ class Run(Base):
     summary: Mapped[str] = mapped_column(Text, default="")
 
 
+class FlowTestRun(Base):
+    """One Test run from the flow builder. It never touches stock; see docs/api.md."""
+
+    __tablename__ = "test_runs"
+    __table_args__ = (Index("ix_test_runs_supplier_state", "supplier_id", "state"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    supplier_id: Mapped[int] = mapped_column(ForeignKey("suppliers.id", ondelete="CASCADE"))
+    state: Mapped[str] = mapped_column(String(30), default="queued")
+    mode: Mapped[str] = mapped_column(String(20))
+    request: Mapped[dict[str, Any]] = mapped_column(JSON)
+    steps: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    reading: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    login_result: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(Timestamp)
+    finished_at: Mapped[datetime | None] = mapped_column(Timestamp, nullable=True)
+
+
 class Job(Base):
     """The Postgres job queue (ADR 0001), claimed with FOR UPDATE SKIP LOCKED."""
 

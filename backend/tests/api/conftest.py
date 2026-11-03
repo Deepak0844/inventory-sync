@@ -74,6 +74,13 @@ def screenshots(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def data_dir(tmp_path: Path) -> Path:
+    folder = tmp_path / "data"
+    folder.mkdir()
+    return folder
+
+
+@pytest.fixture
 def factory(db_session: Session) -> sessionmaker[Session]:
     engine = db_session.get_bind()
     assert isinstance(engine, Engine)
@@ -83,12 +90,12 @@ def factory(db_session: Session) -> sessionmaker[Session]:
 @pytest.fixture
 def make_client(
     factory: sessionmaker[Session], box: SecretBox, clock: Clock, shopify: FakeShopify,
-    screenshots: Path,
+    screenshots: Path, data_dir: Path,
 ) -> Callable[[], TestClient]:
     def build() -> TestClient:
         app = create_app(database=FakeDatabase(True), session_factory=factory, box=box,
                          now=clock, shopify_factory=shopify, secure_cookies=False,
-                         screenshot_dir=screenshots)
+                         screenshot_dir=screenshots, data_dir=data_dir)
         return TestClient(app)
 
     return build

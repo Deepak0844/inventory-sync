@@ -31,7 +31,7 @@ export default function App() {
           <Route path="approvals" element={<Approvals />} />
           <Route path="notifications" element={<Notifications />} />
           <Route path="orders" element={<Orders />} />
-          <Route path="flows" element={<Flows />} />
+          <Route path="flows/*" element={<Flows />} />
           <Route path="settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

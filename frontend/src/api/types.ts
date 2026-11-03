@@ -193,3 +193,45 @@ export interface LoginBody {
 
 /** The flow definition JSON (PLAN.md section 11). Screens that edit it narrow this type. */
 export type FlowDefinition = Record<string, unknown>;
+
+/** One step of a Test run (docs/api.md, Test runs). */
+export interface TestRunStep {
+  node_id: string;
+  type: string;
+  ok: boolean;
+  error: string | null;
+  screenshot_url: string | null;
+  at: string;
+}
+export interface TestRunSnapshot {
+  screenshot_url: string;
+  html_url: string;
+}
+export interface TestRunReading {
+  result: "in_stock" | "out_of_stock" | "listing_removed" | "unknown";
+  error_kind: string | null;
+  quantity: number | null;
+  matched_rule: string | null;
+}
+export interface TestRun {
+  id: number;
+  state: "queued" | "running" | "waiting_for_code" | "done" | "failed";
+  mode: "login" | "extract";
+  steps: TestRunStep[];
+  snapshot: TestRunSnapshot | null;
+  reading: TestRunReading | null;
+  login_result: string | null;
+  error: string | null;
+  /** Always false: Test runs never write to Shopify. */
+  wrote_to_shopify: false;
+}
+export interface NewTestRun {
+  supplier_id: number;
+  /** An unsaved draft; omitted means the saved flow. */
+  flow?: FlowDefinition;
+  mode: "login" | "extract";
+  /** Stop after this node and return a snapshot of the page there (the selector picker). */
+  up_to_node_id?: string;
+  /** Required for mode "extract". */
+  listing_url?: string;
+}

@@ -22,6 +22,7 @@ from app.api import (
     overview,
     settings,
     suppliers,
+    test_runs,
 )
 from app.core.config import get_settings
 from app.core.database import Database, PostgresDatabase
@@ -46,6 +47,7 @@ def create_app(
     shopify_factory: ShopifyFactory | None = None,
     secure_cookies: bool = True,
     screenshot_dir: Path | None = None,
+    data_dir: Path | None = None,
 ) -> FastAPI:
     """Build the app. Everything outside the process is injectable so tests use fakes.
 
@@ -57,9 +59,12 @@ def create_app(
         shopify_factory: Builds the client for the settings "test connection" check.
         secure_cookies: Mark the session cookie Secure (turn off only for plain-HTTP tests).
         screenshot_dir: The only folder failure screenshots are served from.
+        data_dir: Where Test run screenshots and snapshots live (`<data_dir>/test-runs/<id>/`).
     """
+    default_data_dir = Path("data")
     if database is None:
         settings_ = get_settings()
+        default_data_dir = settings_.data_dir
         postgres = PostgresDatabase(settings_.database_url.get_secret_value())
         database = postgres
         session_factory = session_factory or sessionmaker(postgres.engine, expire_on_commit=False)
@@ -72,9 +77,10 @@ def create_app(
     app.state.shopify_factory = shopify_factory or default_shopify_factory
     app.state.secure_cookies = secure_cookies
     app.state.screenshot_dir = screenshot_dir or Path("data/screenshots")
+    app.state.data_dir = data_dir or default_data_dir
     app.include_router(health.router)
     app.include_router(auth.router)
     for module in (suppliers, login_code, catalog, approvals, notifications, orders, overview,
-                   settings):
+                   settings, test_runs):
         app.include_router(module.router)
     return app

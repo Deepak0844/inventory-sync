@@ -3,6 +3,7 @@
 Playwright's `Page` satisfies these structurally.
 """
 
+from collections.abc import Sequence
 from typing import Protocol
 
 
@@ -49,6 +50,10 @@ class Page(Protocol):
 
     def content(self) -> str:
         """The page HTML."""
+        ...
+
+    def screenshot(self, mask_selectors: Sequence[str]) -> bytes:
+        """A PNG of the page with every element matching `mask_selectors` painted over."""
         ...
 
 

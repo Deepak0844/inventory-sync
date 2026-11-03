@@ -1,0 +1,20 @@
+/* React Flow's own colours, pointed at the design tokens. No raw values here. */
+.flow-canvas {
+  --xy-background-color: var(--ground);
+  --xy-edge-stroke-default: var(--faint);
+  --xy-edge-stroke-selected-default: var(--text);
+  --xy-edge-label-color-default: var(--muted);
+  --xy-edge-label-background-color-default: var(--ground);
+  --xy-connectionline-stroke-default: var(--text);
+  --xy-handle-background-color-default: var(--text);
+  --xy-handle-border-color-default: var(--surface);
+  --xy-selection-background-color-default: var(--active);
+  --xy-selection-border-default: 1px solid var(--text);
+  --xy-controls-button-background-color-default: var(--surface);
+  --xy-controls-button-color-default: var(--text);
+  --xy-controls-button-border-color-default: var(--border);
+  --xy-attribution-background-color-default: var(--ground);
+}
+.flow-canvas .react-flow__node {
+  font-family: inherit;
+}

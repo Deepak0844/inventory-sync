@@ -3,12 +3,12 @@ import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import type {
   AppNotification, Approval, Banner, FlaggedOrder, FlowDefinition, ImportResult, Listing,
   ListingQuery, LoginBody, Mapping, Me, NewSupplier, Overview, PendingCode, Page, Run, Settings,
-  SettingsUpdate, Supplier, SupplierCredentials, TestResult, VariantQuery, VariantRow,
+  NewTestRun, SettingsUpdate, Supplier, SupplierCredentials, TestResult, TestRun, VariantQuery, VariantRow,
 } from "./types";
 
 const tags = [
   "Auth", "Supplier", "Credentials", "Flow", "Runs", "PendingCode", "Listing", "Variant",
-  "Approval", "Notification", "Order", "Overview", "Banner", "Settings",
+  "Approval", "Notification", "Order", "Overview", "Banner", "Settings", "TestRun",
 ] as const;
 
 /** The one API slice. Endpoints are grouped by resource, in the order of docs/api.md. */
@@ -65,6 +65,14 @@ export const api = createApi({
     setFlow: b.mutation<FlowDefinition, { id: number; flow: FlowDefinition }>({
       query: ({ id, flow }) => ({ url: `/suppliers/${id}/flow`, method: "PUT", body: flow }),
       invalidatesTags: (_r, _e, { id }) => [{ type: "Flow", id }],
+    }),
+    // test runs (flow builder)
+    startTestRun: b.mutation<{ id: number }, NewTestRun>({
+      query: (body) => ({ url: "/test-runs", method: "POST", body }),
+    }),
+    testRun: b.query<TestRun, number>({
+      query: (id) => `/test-runs/${id}`,
+      providesTags: (_r, _e, id) => [{ type: "TestRun", id }],
     }),
     startLogin: b.mutation<void, number>({
       query: (id) => ({ url: `/suppliers/${id}/login`, method: "POST" }),
@@ -171,7 +179,7 @@ export const {
   useSuppliersQuery, useSupplierQuery, useAddSupplierMutation, useUpdateSupplierMutation,
   useDeleteSupplierMutation, useCredentialsQuery, useSetCredentialsMutation, useFlowQuery,
   useSetFlowMutation, useStartLoginMutation, useRetrySupplierMutation, useCheckSupplierMutation,
-  useRunsQuery, usePendingCodesQuery, useSubmitCodeMutation, useListingsQuery,
+  useStartTestRunMutation, useTestRunQuery, useRunsQuery, usePendingCodesQuery, useSubmitCodeMutation, useListingsQuery,
   useImportListingsMutation, useVariantsQuery, useMappingsQuery, useSetMappingsMutation,
   useApprovalsQuery, useApproveMutation, useRejectMutation, useNotificationsQuery,
   useResolveNotificationMutation, useFlaggedOrdersQuery, useOverviewQuery, useBannerQuery,
